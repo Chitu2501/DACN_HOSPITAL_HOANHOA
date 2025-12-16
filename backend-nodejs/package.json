@@ -1,0 +1,54 @@
+{
+  "name": "hospital-management-backend",
+  "version": "1.0.0",
+  "description": "Hospital Management System Backend API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "npx nodemon server.js",
+    "seed": "node scripts/seedData.js",
+    "create-admin": "node scripts/createAdmin.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:patient": "tsc --project tsconfig.json",
+    "dev:patient": "ts-node --project tsconfig.json src/server.ts",
+    "start:patient": "node dist/server.js",
+    "create-db": "ts-node --project tsconfig.json scripts/createDatabase.ts",
+    "delete-db": "ts-node --project tsconfig.json scripts/deleteDatabase.ts",
+    "test-connection": "ts-node --project tsconfig.json scripts/testConnection.ts",
+    "test-connection-simple": "ts-node --project tsconfig.json scripts/testConnectionSimple.ts",
+    "test-connection-string": "ts-node --project tsconfig.json scripts/testConnectionString.ts",
+    "setup:mssql": "ts-node --project tsconfig.json scripts/setupMssql.ts",
+    "test-connection-win": "node scripts/testConnectionWin.js"
+  },
+  "keywords": [
+    "hospital",
+    "management",
+    "api",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "exceljs": "^4.4.0",
+    "express": "^4.18.2",
+    "express-validator": "^7.0.1",
+    "jsonwebtoken": "^9.0.2",
+    "moment": "^2.29.4",
+    "mongoose": "^7.6.3",
+    "mssql": "^10.0.4"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.25",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/mssql": "^4.3.1",
+    "@types/node": "^20.10.5",
+    "nodemon": "^3.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
