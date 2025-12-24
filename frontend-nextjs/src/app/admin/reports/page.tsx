@@ -5,46 +5,93 @@ import { AdminLayout } from '@/components/Layout/AdminLayout';
 import { statisticsApi } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import {
-  FileDown,
-  FileText,
+  FileSpreadsheet,
   Calendar,
   Users,
   DollarSign,
   Download,
-  Loader2
+  Loader2,
+  Eye,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle
 } from 'lucide-react';
+
+interface PreviewData {
+  reportType: string;
+  users?: {
+    data: any[];
+    total: number;
+    columns: string[];
+    byRole?: { role: string; count: number }[];
+  };
+  revenue?: {
+    data: any[];
+    total: number;
+    grandTotal: number;
+    totalTransactions: number;
+    avgPerTransaction: number;
+    columns: string[];
+  };
+}
 
 export default function ReportsPage() {
   const [isExporting, setIsExporting] = useState(false);
-  const [exportConfig, setExportConfig] = useState({
-    reportType: 'full',
-    startDate: new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0],
-  });
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [previewPage, setPreviewPage] = useState(1);
+  const pageSize = 10;
+
+  const [reportType, setReportType] = useState('users');
+  const [startDate, setStartDate] = useState(
+    new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]
+  );
+  const [endDate, setEndDate] = useState(
+    new Date().toISOString().split('T')[0]
+  );
+
+  const handlePreview = async () => {
+    setIsPreviewing(true);
+    try {
+      const response = await statisticsApi.previewReport({ reportType, startDate, endDate });
+      if (response.data?.success) {
+        setPreviewData(response.data.data);
+        setPreviewPage(1);
+        setShowPreviewModal(true);
+      } else {
+        toast.error('Không thể tải dữ liệu xem trước');
+      }
+    } catch (error: any) {
+      console.error('Preview error:', error);
+      toast.error('Lỗi khi tải dữ liệu xem trước');
+    } finally {
+      setIsPreviewing(false);
+    }
+  };
 
   const handleExportExcel = async () => {
     setIsExporting(true);
     try {
-      const response = await statisticsApi.exportReport(exportConfig);
-      
-      // Create blob from response
+      const response = await statisticsApi.exportReport({ reportType, startDate, endDate });
+
       const blob = new Blob([response.data], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
-      
-      // Create download link
+
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `hospital-report-${new Date().toISOString().split('T')[0]}.xlsx`;
+      link.download = `bao-cao-${reportType}-${new Date().toISOString().split('T')[0]}.xlsx`;
       document.body.appendChild(link);
       link.click();
-      
-      // Cleanup
+
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       toast.success('Xuất báo cáo thành công!');
+      setShowPreviewModal(false);
     } catch (error: any) {
       console.error('Export error:', error);
       toast.error('Xuất báo cáo thất bại');
@@ -53,229 +100,341 @@ export default function ReportsPage() {
     }
   };
 
-  const reportTemplates = [
-    {
-      id: 'full',
-      name: 'Báo cáo tổng hợp',
-      description: 'Bao gồm thống kê người dùng và doanh thu',
-      icon: FileText,
-      color: 'bg-blue-500',
-    },
-    {
-      id: 'users',
-      name: 'Báo cáo người dùng',
-      description: 'Danh sách và thống kê người dùng',
-      icon: Users,
-      color: 'bg-green-500',
-    },
-    {
-      id: 'revenue',
-      name: 'Báo cáo doanh thu',
-      description: 'Chi tiết doanh thu và thanh toán',
-      icon: DollarSign,
-      color: 'bg-purple-500',
-    },
-  ];
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('vi-VN').format(value) + ' ₫';
+  };
+
+  const getPaginatedData = (data: any[] | undefined) => {
+    if (!data) return [];
+    const start = (previewPage - 1) * pageSize;
+    return data.slice(start, start + pageSize);
+  };
+
+  const getTotalPages = (data: any[] | undefined) => {
+    if (!data) return 1;
+    return Math.ceil(data.length / pageSize);
+  };
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        {/* Page Header với gradient xanh lá */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 p-8 text-white">
-          <div className="relative z-10">
-            <h1 className="text-4xl font-bold mb-2">Báo cáo Excel 📊</h1>
-            <p className="text-green-100">Xuất báo cáo chi tiết và thống kê dữ liệu</p>
-          </div>
-          <div className="absolute top-0 right-0 w-72 h-72 bg-white/10 rounded-full -mr-36 -mt-36"></div>
-          <div className="absolute bottom-0 left-10 w-48 h-48 bg-white/10 rounded-full -mb-24"></div>
+      <div className="max-w-5xl mx-auto px-8 py-6">
+        {/* Header */}
+        <div className="mb-8 text-center">
+          <h1 className="text-3xl font-bold text-gray-900 flex items-center justify-center gap-3">
+            <FileSpreadsheet className="w-8 h-8 text-emerald-600" />
+            Xuất báo cáo Excel
+          </h1>
+          <p className="text-gray-500 mt-2">Chọn loại báo cáo và khoảng thời gian để xuất file</p>
         </div>
 
-        {/* Export Configuration */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Cấu hình báo cáo</h2>
-          <p className="text-gray-600 mb-8">Chọn loại báo cáo và khoảng thời gian</p>
-          
-          <div className="space-y-6">
-            {/* Report Type Selection */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">
-                Loại báo cáo
-              </label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {reportTemplates.map((template) => (
-                  <button
-                    key={template.id}
-                    onClick={() => setExportConfig({ ...exportConfig, reportType: template.id })}
-                    className={`p-6 rounded-2xl border-2 transition-all transform hover:scale-105 ${
-                      exportConfig.reportType === template.id
-                        ? 'border-emerald-600 bg-emerald-50 shadow-lg'
-                        : 'border-gray-200 hover:border-emerald-300 hover:shadow-md'
-                    }`}
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className={`${template.color} w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-md`}>
-                        <template.icon className="w-7 h-7 text-white" />
-                      </div>
-                      <div className="text-left flex-1">
-                        <h3 className="font-bold text-gray-900 text-lg">{template.name}</h3>
-                        <p className="text-sm text-gray-600 mt-1">{template.description}</p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
+        {/* Main Card */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 space-y-8">
 
-            {/* Date Range */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Step 1: Report Type */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">
+              1. Chọn loại báo cáo
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setReportType('users')}
+                className={`flex items-center gap-3 p-4 rounded-lg border-2 transition-all ${reportType === 'users'
+                  ? 'border-emerald-500 bg-emerald-50'
+                  : 'border-gray-200 hover:border-gray-300'
+                  }`}
+              >
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${reportType === 'users' ? 'bg-emerald-500' : 'bg-gray-100'
+                  }`}>
+                  <Users className={`w-5 h-5 ${reportType === 'users' ? 'text-white' : 'text-gray-500'}`} />
+                </div>
+                <div className="text-left">
+                  <div className={`font-medium ${reportType === 'users' ? 'text-emerald-700' : 'text-gray-900'}`}>
+                    Người dùng
+                  </div>
+                  <div className="text-xs text-gray-500">Danh sách tất cả người dùng</div>
+                </div>
+                {reportType === 'users' && (
+                  <CheckCircle className="w-5 h-5 text-emerald-500 ml-auto" />
+                )}
+              </button>
+
+              <button
+                onClick={() => setReportType('revenue')}
+                className={`flex items-center gap-3 p-4 rounded-lg border-2 transition-all ${reportType === 'revenue'
+                  ? 'border-emerald-500 bg-emerald-50'
+                  : 'border-gray-200 hover:border-gray-300'
+                  }`}
+              >
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${reportType === 'revenue' ? 'bg-emerald-500' : 'bg-gray-100'
+                  }`}>
+                  <DollarSign className={`w-5 h-5 ${reportType === 'revenue' ? 'text-white' : 'text-gray-500'}`} />
+                </div>
+                <div className="text-left">
+                  <div className={`font-medium ${reportType === 'revenue' ? 'text-emerald-700' : 'text-gray-900'}`}>
+                    Doanh thu
+                  </div>
+                  <div className="text-xs text-gray-500">Tổng doanh thu theo ngày</div>
+                </div>
+                {reportType === 'revenue' && (
+                  <CheckCircle className="w-5 h-5 text-emerald-500 ml-auto" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Step 2: Date Range */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">
+              2. Chọn khoảng thời gian
+            </label>
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Từ ngày
-                </label>
+                <label className="block text-xs text-gray-500 mb-1">Từ ngày</label>
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="date"
-                    value={exportConfig.startDate}
-                    onChange={(e) => setExportConfig({ ...exportConfig, startDate: e.target.value })}
-                    className="input pl-10"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
                   />
                 </div>
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Đến ngày
-                </label>
+                <label className="block text-xs text-gray-500 mb-1">Đến ngày</label>
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="date"
-                    value={exportConfig.endDate}
-                    onChange={(e) => setExportConfig({ ...exportConfig, endDate: e.target.value })}
-                    className="input pl-10"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
                   />
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Export Button */}
-            <div className="flex justify-end pt-4 border-t">
+          {/* Step 3: Actions */}
+          <div className="pt-4 border-t">
+            <label className="block text-sm font-semibold text-gray-700 mb-3">
+              3. Xem trước và xuất file
+            </label>
+            <div className="flex gap-3">
+              <button
+                onClick={handlePreview}
+                disabled={isPreviewing}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white border-2 border-emerald-500 text-emerald-600 rounded-lg font-medium hover:bg-emerald-50 transition-colors disabled:opacity-50"
+              >
+                {isPreviewing ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Eye className="w-5 h-5" />
+                )}
+                Xem trước
+              </button>
               <button
                 onClick={handleExportExcel}
                 disabled={isExporting}
-                className="px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-bold hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50"
               >
                 {isExporting ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Đang xuất...
-                  </>
+                  <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
-                  <>
-                    <Download className="w-5 h-5" />
-                    Xuất báo cáo Excel
-                  </>
+                  <Download className="w-5 h-5" />
                 )}
+                Xuất Excel
               </button>
             </div>
           </div>
         </div>
 
-        {/* Report Information */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="card">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <FileDown className="w-6 h-6 text-blue-600" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-2">Định dạng file</h3>
-                <p className="text-sm text-gray-600">
-                  Báo cáo được xuất dưới định dạng Excel (.xlsx) với nhiều sheet dữ liệu.
-                  File có thể mở bằng Microsoft Excel, Google Sheets, hoặc các ứng dụng tương tự.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <FileText className="w-6 h-6 text-green-600" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-2">Nội dung báo cáo</h3>
-                <p className="text-sm text-gray-600">
-                  Báo cáo bao gồm thống kê chi tiết về người dùng, doanh thu, lịch hẹn,
-                  và các chỉ số quan trọng khác trong khoảng thời gian đã chọn.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Stats */}
-        <div className="card">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Mẫu báo cáo</h3>
-          <div className="prose prose-sm max-w-none text-gray-600">
-            <p>Báo cáo Excel bao gồm các sheet sau:</p>
-            <ul>
-              <li>
-                <strong>User Statistics:</strong> Danh sách người dùng với thông tin chi tiết,
-                phân loại theo vai trò và trạng thái.
-              </li>
-              <li>
-                <strong>Revenue Report:</strong> Chi tiết doanh thu từ các lịch hẹn,
-                bao gồm thông tin bệnh nhân, bác sĩ, phí khám và trạng thái thanh toán.
-              </li>
-              <li>
-                <strong>Summary:</strong> Tổng hợp các chỉ số quan trọng như tổng doanh thu,
-                số lượng lịch hẹn, doanh thu trung bình.
-              </li>
-            </ul>
-            <p className="mt-4">
-              💡 <strong>Mẹo:</strong> Bạn có thể sử dụng các tính năng của Excel như filter,
-              pivot table, và charts để phân tích sâu hơn dữ liệu sau khi xuất.
-            </p>
-          </div>
-        </div>
-
-        {/* Recent Exports Log (Optional) */}
-        <div className="card">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Hướng dẫn sử dụng</h3>
-          <div className="space-y-3">
-            <div className="flex gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
-                <span className="text-primary-600 font-semibold">1</span>
-              </div>
-              <div>
-                <p className="font-medium text-gray-900">Chọn loại báo cáo</p>
-                <p className="text-sm text-gray-600">Chọn một trong ba loại báo cáo có sẵn</p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
-                <span className="text-primary-600 font-semibold">2</span>
-              </div>
-              <div>
-                <p className="font-medium text-gray-900">Chọn khoảng thời gian</p>
-                <p className="text-sm text-gray-600">Thiết lập ngày bắt đầu và kết thúc</p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
-                <span className="text-primary-600 font-semibold">3</span>
-              </div>
-              <div>
-                <p className="font-medium text-gray-900">Xuất báo cáo</p>
-                <p className="text-sm text-gray-600">Nhấn nút "Xuất báo cáo Excel" và file sẽ tự động tải xuống</p>
-              </div>
-            </div>
-          </div>
+        {/* Info */}
+        <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+          <h3 className="text-sm font-medium text-gray-700 mb-2">📋 Thông tin báo cáo</h3>
+          <ul className="text-sm text-gray-600 space-y-1">
+            <li>• <strong>Người dùng:</strong> Xuất danh sách đầy đủ thông tin (tên, email, vai trò, trạng thái...)</li>
+            <li>• <strong>Doanh thu:</strong> Tổng doanh thu theo từng ngày trong khoảng thời gian đã chọn</li>
+          </ul>
         </div>
       </div>
+
+      {/* Preview Modal */}
+      {showPreviewModal && previewData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-bold text-gray-900">
+                📄 Xem trước: {reportType === 'users' ? 'Báo cáo Người dùng' : 'Báo cáo Doanh thu'}
+              </h2>
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-auto p-4">
+              {/* Users Table */}
+              {previewData.users && reportType === 'users' && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm text-gray-600">
+                      Tổng: <strong>{previewData.users.total}</strong> người dùng
+                    </span>
+                    {previewData.users.byRole && (
+                      <div className="flex gap-2 text-xs">
+                        {previewData.users.byRole.map((stat) => (
+                          <span key={stat.role} className="px-2 py-1 bg-gray-100 rounded">
+                            {stat.role}: {stat.count}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="overflow-x-auto border rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-3 py-2 text-left">STT</th>
+                          <th className="px-3 py-2 text-left">Tên đăng nhập</th>
+                          <th className="px-3 py-2 text-left">Họ và tên</th>
+                          <th className="px-3 py-2 text-left">Email</th>
+                          <th className="px-3 py-2 text-left">Vai trò</th>
+                          <th className="px-3 py-2 text-left">Trạng thái</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {getPaginatedData(previewData.users.data).map((row, idx) => (
+                          <tr key={idx} className="border-t hover:bg-gray-50">
+                            <td className="px-3 py-2">{row.stt}</td>
+                            <td className="px-3 py-2">{row.username}</td>
+                            <td className="px-3 py-2">{row.fullName}</td>
+                            <td className="px-3 py-2 text-gray-500">{row.email}</td>
+                            <td className="px-3 py-2">{row.role}</td>
+                            <td className="px-3 py-2">
+                              <span className={`px-2 py-0.5 rounded text-xs ${row.status === 'Hoạt động' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                                }`}>
+                                {row.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* Pagination */}
+                  {previewData.users.data.length > pageSize && (
+                    <div className="flex items-center justify-center gap-3 mt-3 text-sm">
+                      <button
+                        onClick={() => setPreviewPage(p => Math.max(1, p - 1))}
+                        disabled={previewPage === 1}
+                        className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <span className="text-gray-600">
+                        {previewPage} / {getTotalPages(previewData.users.data)}
+                      </span>
+                      <button
+                        onClick={() => setPreviewPage(p => Math.min(getTotalPages(previewData.users.data), p + 1))}
+                        disabled={previewPage === getTotalPages(previewData.users.data)}
+                        className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Revenue Table */}
+              {previewData.revenue && reportType === 'revenue' && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm text-gray-600">
+                      <strong>{previewData.revenue.total}</strong> ngày có doanh thu
+                    </span>
+                    <span className="text-sm font-medium text-emerald-600">
+                      Tổng: {formatCurrency(previewData.revenue.grandTotal)}
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto border rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-3 py-2 text-left">STT</th>
+                          <th className="px-3 py-2 text-left">Ngày</th>
+                          <th className="px-3 py-2 text-right">Số giao dịch</th>
+                          <th className="px-3 py-2 text-right">Doanh thu</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {getPaginatedData(previewData.revenue.data).map((row, idx) => (
+                          <tr key={idx} className="border-t hover:bg-gray-50">
+                            <td className="px-3 py-2">{row.stt}</td>
+                            <td className="px-3 py-2">{row.date}</td>
+                            <td className="px-3 py-2 text-right">{row.transactions}</td>
+                            <td className="px-3 py-2 text-right font-medium text-emerald-600">
+                              {formatCurrency(row.revenue)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {previewData.revenue.data.length > pageSize && (
+                    <div className="flex items-center justify-center gap-3 mt-3 text-sm">
+                      <button
+                        onClick={() => setPreviewPage(p => Math.max(1, p - 1))}
+                        disabled={previewPage === 1}
+                        className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <span className="text-gray-600">
+                        {previewPage} / {getTotalPages(previewData.revenue.data)}
+                      </span>
+                      <button
+                        onClick={() => setPreviewPage(p => Math.min(getTotalPages(previewData.revenue.data), p + 1))}
+                        disabled={previewPage === getTotalPages(previewData.revenue.data)}
+                        className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-4 border-t bg-gray-50">
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Đóng
+              </button>
+              <button
+                onClick={handleExportExcel}
+                disabled={isExporting}
+                className="flex items-center gap-2 px-5 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50"
+              >
+                {isExporting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                Xuất Excel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }
-

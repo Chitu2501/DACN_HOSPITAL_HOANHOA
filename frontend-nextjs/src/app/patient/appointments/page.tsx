@@ -480,9 +480,8 @@ export default function PatientAppointments() {
                           return (
                             <div
                               key={doctorKey}
-                              className={`${UI.card} p-6 cursor-pointer ${UI.cardHover} ${
-                                isSelected ? 'border-blue-300 ring-2 ring-blue-100' : ''
-                              }`}
+                              className={`${UI.card} p-6 cursor-pointer ${UI.cardHover} ${isSelected ? 'border-blue-300 ring-2 ring-blue-100' : ''
+                                }`}
                               onClick={() => {
                                 setSelectedDoctor(doctorKey);
                                 setViewMode('schedule');
@@ -494,8 +493,20 @@ export default function PatientAppointments() {
                               }}
                             >
                               <div className="flex items-start gap-4 mb-4">
-                                <div className="w-16 h-16 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0 border border-blue-100">
-                                  <Stethoscope className="w-8 h-8 text-blue-600" />
+                                <div className="w-16 h-16 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0 border border-blue-100 overflow-hidden">
+                                  {doctor.avatar_url ? (
+                                    <img
+                                      src={doctor.avatar_url.startsWith('http') ? doctor.avatar_url : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}${doctor.avatar_url}`}
+                                      alt={doctor.fullName || 'Bác sĩ'}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                        (e.target as HTMLImageElement).parentElement!.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M12 6v4"/><path d="M14 14h-4"/><path d="M14 18h-4"/><path d="M14 8h-4"/><path d="M18 12h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h2"/><path d="M6 12V7a6 6 0 0 1 12 0v5"/></svg>';
+                                      }}
+                                    />
+                                  ) : (
+                                    <Stethoscope className="w-8 h-8 text-blue-600" />
+                                  )}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <h3 className="font-semibold text-slate-900 text-lg mb-1 truncate">{doctor.fullName}</h3>
@@ -625,8 +636,20 @@ export default function PatientAppointments() {
                           <div key={schedule.id} className={`${UI.card} p-6`}>
                             <div className="flex items-start justify-between mb-6 gap-4">
                               <div className="flex items-center gap-4">
-                                <div className="w-14 h-14 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center">
-                                  <Stethoscope className="w-7 h-7 text-blue-600" />
+                                <div className="w-14 h-14 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden">
+                                  {schedule.avatar_url ? (
+                                    <img
+                                      src={schedule.avatar_url.startsWith('http') ? schedule.avatar_url : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}${schedule.avatar_url}`}
+                                      alt={schedule.fullName || 'Bác sĩ'}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                        (e.target as HTMLImageElement).parentElement!.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M12 6v4"/><path d="M14 14h-4"/><path d="M14 18h-4"/><path d="M14 8h-4"/><path d="M18 12h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h2"/><path d="M6 12V7a6 6 0 0 1 12 0v5"/></svg>';
+                                      }}
+                                    />
+                                  ) : (
+                                    <Stethoscope className="w-7 h-7 text-blue-600" />
+                                  )}
                                 </div>
                                 <div>
                                   <h3 className="font-semibold text-slate-900 text-lg mb-1">{schedule.fullName}</h3>
@@ -656,15 +679,14 @@ export default function PatientAppointments() {
                                       key={timeSlot}
                                       onClick={() => isAvailable && selectedDate && handleBookSlot(schedule.id, selectedDate, timeSlot)}
                                       disabled={!isAvailable}
-                                      className={`p-3 rounded-xl border text-xs font-medium transition-all ${getSlotClasses(status)} ${
-                                        isAvailable ? 'hover:shadow-sm hover:-translate-y-[1px]' : ''
-                                      }`}
+                                      className={`p-3 rounded-xl border text-xs font-medium transition-all ${getSlotClasses(status)} ${isAvailable ? 'hover:shadow-sm hover:-translate-y-[1px]' : ''
+                                        }`}
                                       title={
                                         status === 'available'
                                           ? 'Click để đặt lịch'
                                           : status === 'booked'
-                                          ? 'Đã có người đặt'
-                                          : 'Bác sĩ không làm việc vào giờ này'
+                                            ? 'Đã có người đặt'
+                                            : 'Bác sĩ không làm việc vào giờ này'
                                       }
                                     >
                                       <div className="flex flex-col items-center gap-1">
@@ -713,11 +735,10 @@ export default function PatientAppointments() {
                   <button
                     key={stat.key}
                     onClick={() => setFilterStatus(stat.key)}
-                    className={`p-4 rounded-2xl border transition-all text-left ${
-                      filterStatus === stat.key
+                    className={`p-4 rounded-2xl border transition-all text-left ${filterStatus === stat.key
                         ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                         : 'bg-white text-slate-900 border-slate-200 hover:border-slate-300 hover:shadow-sm'
-                    }`}
+                      }`}
                   >
                     <p className="text-3xl font-bold mb-1">{stat.count}</p>
                     <p className={`text-sm ${filterStatus === stat.key ? 'text-white/90' : 'text-slate-600'}`}>{stat.label}</p>
@@ -762,8 +783,20 @@ export default function PatientAppointments() {
                     >
                       <div className="flex items-start justify-between mb-4 gap-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center">
-                            <Stethoscope className="w-6 h-6 text-blue-600" />
+                          <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden">
+                            {appointment.doctor?.avatar_url ? (
+                              <img
+                                src={appointment.doctor.avatar_url.startsWith('http') ? appointment.doctor.avatar_url : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}${appointment.doctor.avatar_url}`}
+                                alt={appointment.doctor.fullName || 'Bác sĩ'}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                  (e.target as HTMLImageElement).parentElement!.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M12 6v4"/><path d="M14 14h-4"/><path d="M14 18h-4"/><path d="M14 8h-4"/><path d="M18 12h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h2"/><path d="M6 12V7a6 6 0 0 1 12 0v5"/></svg>';
+                                }}
+                              />
+                            ) : (
+                              <Stethoscope className="w-6 h-6 text-blue-600" />
+                            )}
                           </div>
                           <div>
                             <h3 className="font-semibold text-slate-900 text-lg">{appointment.doctor?.fullName || 'Bác sĩ'}</h3>
@@ -897,19 +930,36 @@ export default function PatientAppointments() {
                       <Stethoscope className="w-5 h-5 text-blue-600" />
                       Thông tin bác sĩ
                     </h3>
-                    <div className="space-y-2 text-slate-700">
-                      <p>
-                        <span className="font-medium">Tên:</span> {selectedAppointment.doctor?.fullName}
-                      </p>
-                      <p>
-                        <span className="font-medium">Chuyên khoa:</span>{' '}
-                        {selectedAppointment.doctor?.specialization || selectedAppointment.doctor?.specialty}
-                      </p>
-                      {selectedAppointment.doctor?.department && (
+                    <div className="flex items-start gap-4">
+                      <div className="w-16 h-16 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {selectedAppointment.doctor?.avatar_url ? (
+                          <img
+                            src={selectedAppointment.doctor.avatar_url.startsWith('http') ? selectedAppointment.doctor.avatar_url : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}${selectedAppointment.doctor.avatar_url}`}
+                            alt={selectedAppointment.doctor.fullName || 'Bác sĩ'}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                              (e.target as HTMLImageElement).parentElement!.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M12 6v4"/><path d="M14 14h-4"/><path d="M14 18h-4"/><path d="M14 8h-4"/><path d="M18 12h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h2"/><path d="M6 12V7a6 6 0 0 1 12 0v5"/></svg>';
+                            }}
+                          />
+                        ) : (
+                          <Stethoscope className="w-8 h-8 text-blue-600" />
+                        )}
+                      </div>
+                      <div className="space-y-2 text-slate-700">
                         <p>
-                          <span className="font-medium">Khoa:</span> {selectedAppointment.doctor.department}
+                          <span className="font-medium">Tên:</span> {selectedAppointment.doctor?.fullName}
                         </p>
-                      )}
+                        <p>
+                          <span className="font-medium">Chuyên khoa:</span>{' '}
+                          {selectedAppointment.doctor?.specialization || selectedAppointment.doctor?.specialty}
+                        </p>
+                        {selectedAppointment.doctor?.department && (
+                          <p>
+                            <span className="font-medium">Khoa:</span> {selectedAppointment.doctor.department}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
 

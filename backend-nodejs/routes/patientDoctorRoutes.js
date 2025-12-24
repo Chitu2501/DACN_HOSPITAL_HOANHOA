@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { poolPromise } = require('../database/db-config');
 const { protect } = require('../middleware/auth.middleware');
 const { v4: uuidv4 } = require('uuid');
+const { uploadBHYT } = require('../config/multer-bhyt');
 
 const TABLE = process.env.SQL_TABLE_USERS || 'USERS_AUTH';
 
@@ -15,7 +16,7 @@ function isValidUUID(str) {
 // Helper function: Tìm ma_benh_nhan từ user info
 async function findMaBenhNhan(pool, username, userId, email) {
   let maBenhNhan = null;
-  
+
   // Thử tìm theo email trước
   if (email) {
     const emailResult = await pool.request()
@@ -25,17 +26,17 @@ async function findMaBenhNhan(pool, username, userId, email) {
         FROM BENH_NHAN
         WHERE email = @email
       `);
-    
+
     if (emailResult.recordset.length > 0) {
       maBenhNhan = emailResult.recordset[0].ma_benh_nhan;
     }
   }
-  
+
   // Nếu không tìm thấy, thử tìm từ USERS_AUTH
   if (!maBenhNhan && (username || userId)) {
     const identifier = username || userId;
     const isUserId = userId && isValidUUID(userId);
-    
+
     let userResult;
     if (isUserId) {
       userResult = await pool.request()
@@ -55,11 +56,11 @@ async function findMaBenhNhan(pool, username, userId, email) {
           WHERE username = @identifier AND role = 'patient'
         `);
     }
-    
+
     if (userResult.recordset.length > 0) {
       const user = userResult.recordset[0];
       const userEmail = user.email || user.username;
-      
+
       const emailResult = await pool.request()
         .input('email', userEmail)
         .query(`
@@ -67,7 +68,7 @@ async function findMaBenhNhan(pool, username, userId, email) {
           FROM BENH_NHAN
           WHERE email = @email
         `);
-      
+
       if (emailResult.recordset.length > 0) {
         maBenhNhan = emailResult.recordset[0].ma_benh_nhan;
       } else {
@@ -88,7 +89,7 @@ async function findMaBenhNhan(pool, username, userId, email) {
       }
     }
   }
-  
+
   return maBenhNhan;
 }
 
@@ -98,7 +99,7 @@ router.get('/medical-records', protect, async (req, res) => {
     const username = req.user?.username;
     const userId = req.user?.id;
     const email = req.user?.email;
-    
+
     if (!username && !userId && !email) {
       return res.status(401).json({
         success: false,
@@ -107,10 +108,10 @@ router.get('/medical-records', protect, async (req, res) => {
     }
 
     const pool = await poolPromise;
-    
+
     // Tìm ma_benh_nhan từ email hoặc username
     let maBenhNhan = null;
-    
+
     // Thử tìm theo email trước (vì email thường dùng để đăng nhập)
     if (email) {
       const emailResult = await pool.request()
@@ -120,25 +121,25 @@ router.get('/medical-records', protect, async (req, res) => {
           FROM BENH_NHAN
           WHERE email = @email
         `);
-      
+
       if (emailResult.recordset.length > 0) {
         maBenhNhan = emailResult.recordset[0].ma_benh_nhan;
       }
     }
-    
+
     // Nếu không tìm thấy theo email, thử tìm theo username hoặc id từ USERS_AUTH
     if (!maBenhNhan && (username || userId)) {
       const identifier = username || userId;
       const isUserId = userId && isValidUUID(userId);
-      
+
       let userResult;
       if (isUserId) {
         userResult = await pool.request()
           .input('identifier', identifier)
           .input('userId', userId)
           .query(`
-            SELECT TOP 1 email, username
-            FROM ${TABLE}
+          SELECT TOP 1 email, username
+          FROM ${TABLE}
             WHERE (username = @identifier OR id = @userId) AND role = 'patient'
           `);
       } else {
@@ -148,9 +149,9 @@ router.get('/medical-records', protect, async (req, res) => {
             SELECT TOP 1 email, username
             FROM ${TABLE}
             WHERE username = @identifier AND role = 'patient'
-          `);
+        `);
       }
-      
+
       if (userResult.recordset.length > 0) {
         const userEmail = userResult.recordset[0].email || userResult.recordset[0].username;
         const emailResult = await pool.request()
@@ -160,13 +161,13 @@ router.get('/medical-records', protect, async (req, res) => {
             FROM BENH_NHAN
             WHERE email = @email
           `);
-        
+
         if (emailResult.recordset.length > 0) {
           maBenhNhan = emailResult.recordset[0].ma_benh_nhan;
         }
       }
     }
-    
+
     if (!maBenhNhan) {
       return res.status(404).json({
         success: false,
@@ -175,7 +176,7 @@ router.get('/medical-records', protect, async (req, res) => {
         count: 0
       });
     }
-    
+
     // Lấy hồ sơ khám từ HO_SO_KHAM (không join sinh hiệu ở đây)
     const result = await pool.request()
       .input('ma_benh_nhan', maBenhNhan)
@@ -209,7 +210,7 @@ router.get('/medical-records', protect, async (req, res) => {
         WHERE lh.ma_benh_nhan = @ma_benh_nhan
         ORDER BY hs.ngay_kham DESC, hs.tao_luc DESC
       `);
-    
+
     // Lấy tất cả sinh hiệu cho từng hồ sơ
     const records = await Promise.all(result.recordset.map(async (item) => {
       // Lấy TẤT CẢ sinh hiệu cho hồ sơ này
@@ -230,8 +231,8 @@ router.get('/medical-records', protect, async (req, res) => {
           FROM SINH_HIEU
           WHERE ma_ho_so = @ma_ho_so
           ORDER BY do_luc DESC
-        `);
-      
+      `);
+
       // Map tất cả sinh hiệu thành mảng
       const sinhHieuList = sinhHieuResult.recordset.map((sh) => ({
         ma_sinh_hieu: sh.ma_sinh_hieu,
@@ -245,7 +246,7 @@ router.get('/medical-records', protect, async (req, res) => {
         spo2_phan_tram: sh.spo2_phan_tram,
         ma_y_ta: sh.ma_y_ta,
       }));
-      
+
       return {
         id: item.ma_ho_so,
         _id: item.ma_ho_so,
@@ -272,25 +273,25 @@ router.get('/medical-records', protect, async (req, res) => {
         sinh_hieu: sinhHieuList.length > 0 ? sinhHieuList[0] : null, // Giữ lại để tương thích với code cũ
       };
     }));
-    
+
     // Filter theo query params
     let filteredRecords = records;
     const { status, fromDate, toDate } = req.query;
-    
+
     if (status && status !== 'all') {
       filteredRecords = filteredRecords.filter((r) => r.status === status);
     }
-    
+
     if (fromDate) {
       filteredRecords = filteredRecords.filter((r) => r.visitDate >= fromDate);
     }
-    
+
     if (toDate) {
       filteredRecords = filteredRecords.filter((r) => r.visitDate <= toDate);
     }
-    
+
     console.log(`✅ Found ${filteredRecords.length} medical records for patient: ${maBenhNhan}`);
-    
+
     res.json({
       success: true,
       data: filteredRecords,
@@ -313,7 +314,21 @@ router.get('/doctors', async (req, res) => {
   try {
     const { specialty, department } = req.query;
     const pool = await poolPromise;
-    
+
+    // Kiểm tra xem bảng BAC_SI có cột avatar_url không
+    let hasAvatarUrl = false;
+    try {
+      const checkResult = await pool.request().query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = 'BAC_SI' 
+        AND COLUMN_NAME = 'avatar_url'
+      `);
+      hasAvatarUrl = checkResult.recordset.length > 0;
+    } catch (e) {
+      console.warn('Could not check avatar_url column:', e);
+    }
+
     let query = `
       SELECT 
         u.id,
@@ -325,59 +340,68 @@ router.get('/doctors', async (req, res) => {
         u.specialization,
         u.department AS departmentCode,
         u.license_number AS licenseNumber,
-        k.ten_khoa AS departmentName
+        k.ten_khoa AS departmentName,
+        ${hasAvatarUrl ? 'bs.avatar_url' : 'NULL AS avatar_url'},
+        bs.ten_bac_si,
+        bs.chuyen_khoa,
+        bs.so_chung_chi_hanh_nghe
       FROM ${TABLE} u
       LEFT JOIN KHOA k ON u.department = k.ma_khoa
+      LEFT JOIN BAC_SI bs ON u.username = bs.ma_bac_si
       WHERE u.role = 'doctor' AND u.is_active = 1
     `;
-    
+
     const request = pool.request();
-    
+
     // Filter theo specialty nếu có
     if (specialty) {
-      query += ` AND u.specialization LIKE @specialty`;
+      query += ` AND (u.specialization LIKE @specialty OR bs.chuyen_khoa LIKE @specialty)`;
       request.input('specialty', `%${specialty}%`);
     }
-    
+
     // Filter theo department nếu có
     if (department) {
       query += ` AND (u.department = @department OR k.ten_khoa LIKE @departmentName)`;
       request.input('department', department);
       request.input('departmentName', `%${department}%`);
     }
-    
+
     query += ` ORDER BY u.full_name`;
-    
+
     const result = await request.query(query);
-    
+
     // Map data để đảm bảo format nhất quán với frontend
     const doctors = result.recordset.map(doctor => ({
       id: doctor.id,
       _id: doctor.id, // Thêm _id để tương thích với frontend
-      fullName: doctor.fullName,
-      specialization: doctor.specialization,
-      specialty: doctor.specialization, // Alias cho tương thích
+      fullName: doctor.fullName || doctor.ten_bac_si,
+      ten_bac_si: doctor.ten_bac_si,
+      specialization: doctor.specialization || doctor.chuyen_khoa,
+      specialty: doctor.specialization || doctor.chuyen_khoa, // Alias cho tương thích
+      chuyen_khoa: doctor.chuyen_khoa,
       email: doctor.email,
       phone: doctor.phone,
       address: doctor.address,
       department: doctor.departmentName || doctor.departmentCode, // Ưu tiên tên khoa, nếu không có thì dùng mã
       departmentCode: doctor.departmentCode, // Giữ mã khoa riêng
-      licenseNumber: doctor.licenseNumber,
-      username: doctor.username
+      licenseNumber: doctor.licenseNumber || doctor.so_chung_chi_hanh_nghe,
+      so_chung_chi_hanh_nghe: doctor.so_chung_chi_hanh_nghe,
+      username: doctor.username,
+      avatar_url: doctor.avatar_url // Thêm avatar_url từ BAC_SI
     }));
-    
-    console.log(`✅ Found ${doctors.length} doctors from USERS_AUTH`);
-    
-    res.json({ 
-      success: true, 
+
+    console.log(`✅ Found ${doctors.length} doctors from USERS_AUTH with avatar_url support`);
+
+    res.json({
+      success: true,
       data: doctors,
       count: doctors.length
     });
   } catch (err) {
     console.error('❌ SQL doctors error:', err.message);
     console.error('Error stack:', err.stack);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: err.message || 'Lỗi khi lấy danh sách bác sĩ'
     });
   }
@@ -387,12 +411,12 @@ router.get('/doctors', async (req, res) => {
 // Chỉ tạo slots trong khoảng thời gian thực tế của ca làm việc
 function generateTimeSlots(batDau, ketThuc) {
   const slots = [];
-  
+
   try {
     // SQL Server trả về datetime có thể là string hoặc Date object
     // Đảm bảo parse đúng cách, không bị ảnh hưởng bởi timezone
     let start, end;
-    
+
     if (batDau instanceof Date) {
       start = new Date(batDau);
     } else if (typeof batDau === 'string') {
@@ -401,7 +425,7 @@ function generateTimeSlots(batDau, ketThuc) {
     } else {
       start = new Date(batDau);
     }
-    
+
     if (ketThuc instanceof Date) {
       end = new Date(ketThuc);
     } else if (typeof ketThuc === 'string') {
@@ -409,42 +433,42 @@ function generateTimeSlots(batDau, ketThuc) {
     } else {
       end = new Date(ketThuc);
     }
-    
+
     // Validate dates
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
       console.warn('⚠️ Invalid date range for generateTimeSlots:', { batDau, ketThuc, start, end });
       return [];
     }
-    
+
     if (start >= end) {
       console.warn('⚠️ Start time >= end time:', { batDau, ketThuc, start, end });
       return [];
     }
-    
+
     // Tạo slots từ bat_dau đến ket_thuc, mỗi slot 30 phút
     // Sử dụng UTC để tránh timezone issues, sau đó convert về local time
     let current = new Date(start);
     const slotDuration = 30 * 60 * 1000; // 30 phút
-    
+
     while (current < end) {
       const slotStart = new Date(current);
       const slotEnd = new Date(current.getTime() + slotDuration);
-      
+
       // Dừng nếu slotEnd vượt quá ket_thuc
       if (slotEnd > end) break;
-      
+
       // Format giờ:phút (HH:mm) - sử dụng local time từ datetime của SQL Server
       // SQL Server datetime không có timezone, nên getHours() sẽ trả về giờ đúng
       const hours = slotStart.getHours().toString().padStart(2, '0');
       const minutes = slotStart.getMinutes().toString().padStart(2, '0');
       const startStr = `${hours}:${minutes}`;
-      
+
       const endHours = slotEnd.getHours().toString().padStart(2, '0');
       const endMinutes = slotEnd.getMinutes().toString().padStart(2, '0');
       const endStr = `${endHours}:${endMinutes}`;
-      
+
       slots.push(`${startStr}-${endStr}`);
-      
+
       // Tiếp tục với slot tiếp theo
       current = slotEnd;
     }
@@ -452,7 +476,7 @@ function generateTimeSlots(batDau, ketThuc) {
     console.error('❌ Error in generateTimeSlots:', error, { batDau, ketThuc });
     return [];
   }
-  
+
   return slots;
 }
 
@@ -461,7 +485,21 @@ router.get('/doctors/schedules', async (req, res) => {
   try {
     const { doctorId, date } = req.query;
     const pool = await poolPromise;
-    
+
+    // Kiểm tra xem bảng BAC_SI có cột avatar_url không
+    let hasAvatarUrl = false;
+    try {
+      const checkResult = await pool.request().query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = 'BAC_SI' 
+        AND COLUMN_NAME = 'avatar_url'
+      `);
+      hasAvatarUrl = checkResult.recordset.length > 0;
+    } catch (e) {
+      console.warn('Could not check avatar_url column:', e);
+    }
+
     // Build query để lấy ca làm việc
     let query = `
       SELECT 
@@ -474,44 +512,45 @@ router.get('/doctors/schedules', async (req, res) => {
         u.id AS doctor_user_id,
         u.full_name AS doctor_full_name,
         u.specialization AS doctor_specialization,
-        k.ten_khoa AS department_name
+        k.ten_khoa AS department_name,
+        ${hasAvatarUrl ? 'bs.avatar_url' : 'NULL AS avatar_url'}
       FROM CA_BAC_SI ca
       INNER JOIN BAC_SI bs ON ca.ma_bac_si = bs.ma_bac_si
       LEFT JOIN ${TABLE} u ON bs.ma_bac_si = u.username
       LEFT JOIN KHOA k ON bs.ma_khoa = k.ma_khoa
       WHERE ca.trang_thai = 'active'
     `;
-    
+
     const request = pool.request();
-    
+
     // Filter theo doctorId (username hoặc id từ USERS_AUTH)
     if (doctorId) {
       query += ` AND (ca.ma_bac_si = @doctorId OR u.id = @doctorId)`;
       request.input('doctorId', doctorId);
     }
-    
+
     // Filter theo date nếu có
     if (date) {
       const dateStr = date.toString();
       query += ` AND CAST(ca.bat_dau AS DATE) = CAST(@date AS DATE)`;
       request.input('date', dateStr);
     }
-    
+
     query += ` ORDER BY ca.bat_dau`;
-    
+
     const result = await request.query(query);
-    
+
     // Lấy danh sách lịch hẹn đã đặt để tính booked slots (chỉ lấy của các ca trong result)
     const maCaList = result.recordset.map(ca => ca.ma_ca);
     let bookedAppointments = { recordset: [] };
-    
+
     if (maCaList.length > 0) {
       const maCaParams = maCaList.map((_, idx) => `@ma_ca_${idx}`).join(',');
       const bookedRequest = pool.request();
       maCaList.forEach((maCa, idx) => {
         bookedRequest.input(`ma_ca_${idx}`, maCa);
       });
-      
+
       bookedAppointments = await bookedRequest.query(`
         SELECT 
           lh.ma_ca,
@@ -522,7 +561,7 @@ router.get('/doctors/schedules', async (req, res) => {
           AND lh.trang_thai NOT IN ('cancelled', 'huy', 'đã hủy')
       `);
     }
-    
+
     // Map booked appointments by ma_ca
     const bookedByCa = {};
     bookedAppointments.recordset.forEach(apt => {
@@ -531,13 +570,13 @@ router.get('/doctors/schedules', async (req, res) => {
       }
       bookedByCa[apt.ma_ca].push(new Date(apt.thoi_gian_hen));
     });
-    
+
     // Group schedules by doctor
     const schedulesByDoctor = {};
-    
+
     result.recordset.forEach(ca => {
       const doctorIdKey = ca.doctor_user_id || ca.ma_bac_si;
-      
+
       if (!schedulesByDoctor[doctorIdKey]) {
         schedulesByDoctor[doctorIdKey] = {
           id: doctorIdKey,
@@ -546,23 +585,24 @@ router.get('/doctors/schedules', async (req, res) => {
           specialty: ca.doctor_specialization || 'Chưa xác định',
           specialization: ca.doctor_specialization || 'Chưa xác định',
           department: ca.department_name || '',
+          avatar_url: ca.avatar_url || null,
           allSlots: [],
           availableSlots: [],
           bookedSlots: []
         };
       }
-      
+
       // Generate time slots từ bat_dau đến ket_thuc
       // Chỉ tạo slots trong khoảng thời gian thực tế của ca làm việc
       const slots = generateTimeSlots(ca.bat_dau, ca.ket_thuc);
-      
+
       // Log để debug (chỉ trong development)
       if (process.env.NODE_ENV === 'development' && slots.length > 0) {
         console.log(`📅 Ca làm việc: ${ca.bat_dau} -> ${ca.ket_thuc}, Tạo ${slots.length} slots:`, slots.slice(0, 3), '...');
       }
-      
+
       schedulesByDoctor[doctorIdKey].allSlots.push(...slots);
-      
+
       // Kiểm tra slots đã được đặt
       const bookedTimes = bookedByCa[ca.ma_ca] || [];
       slots.forEach(slot => {
@@ -573,14 +613,14 @@ router.get('/doctors/schedules', async (req, res) => {
         const slotStartTime = new Date(caDate);
         slotStartTime.setHours(hours, minutes, 0, 0);
         const slotEndTime = new Date(slotStartTime.getTime() + 30 * 60 * 1000);
-        
+
         // Kiểm tra xem có lịch hẹn nào trong slot này không
         const isBooked = bookedTimes.some(bookedTime => {
           const booked = new Date(bookedTime);
           // So sánh cùng ngày và cùng giờ
           return booked >= slotStartTime && booked < slotEndTime;
         });
-        
+
         if (isBooked) {
           if (!schedulesByDoctor[doctorIdKey].bookedSlots.includes(slot)) {
             schedulesByDoctor[doctorIdKey].bookedSlots.push(slot);
@@ -592,12 +632,12 @@ router.get('/doctors/schedules', async (req, res) => {
         }
       });
     });
-    
+
     // Convert to array và loại bỏ duplicate slots
     const schedules = Object.values(schedulesByDoctor).map((schedule) => {
       // Loại bỏ duplicate và sort - CHỈ giữ các slots từ allSlots
       schedule.allSlots = [...new Set(schedule.allSlots)].sort();
-      
+
       // Đảm bảo availableSlots và bookedSlots chỉ chứa các slots có trong allSlots
       schedule.availableSlots = [...new Set(schedule.availableSlots)]
         .filter((slot) => schedule.allSlots.includes(slot) && !schedule.bookedSlots.includes(slot))
@@ -605,17 +645,17 @@ router.get('/doctors/schedules', async (req, res) => {
       schedule.bookedSlots = [...new Set(schedule.bookedSlots)]
         .filter((slot) => schedule.allSlots.includes(slot))
         .sort();
-      
+
       // Log để debug
       if (process.env.NODE_ENV === 'development') {
         console.log(`👨‍⚕️ Bác sĩ ${schedule.fullName}: ${schedule.allSlots.length} slots, ${schedule.availableSlots.length} available, ${schedule.bookedSlots.length} booked`);
       }
-      
+
       return schedule;
     });
-    
+
     console.log(`✅ Found ${schedules.length} doctor schedules`);
-    
+
     res.json({
       success: true,
       data: schedules,
@@ -657,7 +697,7 @@ router.post('/appointments', protect, async (req, res) => {
 
     // 1. Tìm ma_benh_nhan từ USERS_AUTH hoặc BENH_NHAN
     let maBenhNhan = null;
-    
+
     // Thử tìm từ USERS_AUTH trước (nếu có mapping)
     const userResult = await pool.request()
       .input('userId', userId || username)
@@ -669,7 +709,7 @@ router.post('/appointments', protect, async (req, res) => {
 
     if (userResult.recordset.length > 0) {
       const user = userResult.recordset[0];
-      
+
       // Tìm ma_benh_nhan từ BENH_NHAN dựa trên email hoặc tên
       const benhNhanResult = await pool.request()
         .input('email', user.email || '')
@@ -913,10 +953,10 @@ router.get('/payments/all', protect, async (req, res) => {
     }
 
     const pool = await poolPromise;
-    
+
     // Tìm ma_benh_nhan từ email hoặc username
     let maBenhNhan = null;
-    
+
     if (email) {
       const emailResult = await pool.request()
         .input('email', email)
@@ -925,24 +965,24 @@ router.get('/payments/all', protect, async (req, res) => {
           FROM BENH_NHAN
           WHERE email = @email
         `);
-      
+
       if (emailResult.recordset.length > 0) {
         maBenhNhan = emailResult.recordset[0].ma_benh_nhan;
       }
     }
-    
+
     if (!maBenhNhan && (username || userId)) {
       const identifier = username || userId;
       const isUserId = userId && isValidUUID(userId);
-      
+
       let userResult;
       if (isUserId) {
         userResult = await pool.request()
           .input('identifier', identifier)
           .input('userId', userId)
           .query(`
-            SELECT TOP 1 email, username
-            FROM ${TABLE}
+          SELECT TOP 1 email, username
+          FROM ${TABLE}
             WHERE (username = @identifier OR id = @userId) AND role = 'patient'
           `);
       } else {
@@ -952,9 +992,9 @@ router.get('/payments/all', protect, async (req, res) => {
             SELECT TOP 1 email, username
             FROM ${TABLE}
             WHERE username = @identifier AND role = 'patient'
-          `);
+        `);
       }
-      
+
       if (userResult.recordset.length > 0) {
         const userEmail = userResult.recordset[0].email || userResult.recordset[0].username;
         const emailResult = await pool.request()
@@ -964,7 +1004,7 @@ router.get('/payments/all', protect, async (req, res) => {
             FROM BENH_NHAN
             WHERE email = @email
           `);
-        
+
         if (emailResult.recordset.length > 0) {
           maBenhNhan = emailResult.recordset[0].ma_benh_nhan;
         }
@@ -1087,10 +1127,10 @@ router.get('/medical-records/:id/payment-status', protect, async (req, res) => {
     }
 
     const pool = await poolPromise;
-    
+
     // Tìm ma_benh_nhan từ email hoặc username
     let maBenhNhan = null;
-    
+
     if (email) {
       const emailResult = await pool.request()
         .input('email', email)
@@ -1099,24 +1139,24 @@ router.get('/medical-records/:id/payment-status', protect, async (req, res) => {
           FROM BENH_NHAN
           WHERE email = @email
         `);
-      
+
       if (emailResult.recordset.length > 0) {
         maBenhNhan = emailResult.recordset[0].ma_benh_nhan;
       }
     }
-    
+
     if (!maBenhNhan && (username || userId)) {
       const identifier = username || userId;
       const isUserId = userId && isValidUUID(userId);
-      
+
       let userResult;
       if (isUserId) {
         userResult = await pool.request()
           .input('identifier', identifier)
           .input('userId', userId)
           .query(`
-            SELECT TOP 1 email, username
-            FROM ${TABLE}
+          SELECT TOP 1 email, username
+          FROM ${TABLE}
             WHERE (username = @identifier OR id = @userId) AND role = 'patient'
           `);
       } else {
@@ -1126,9 +1166,9 @@ router.get('/medical-records/:id/payment-status', protect, async (req, res) => {
             SELECT TOP 1 email, username
             FROM ${TABLE}
             WHERE username = @identifier AND role = 'patient'
-          `);
+        `);
       }
-      
+
       if (userResult.recordset.length > 0) {
         const userEmail = userResult.recordset[0].email || userResult.recordset[0].username;
         const emailResult = await pool.request()
@@ -1138,7 +1178,7 @@ router.get('/medical-records/:id/payment-status', protect, async (req, res) => {
             FROM BENH_NHAN
             WHERE email = @email
           `);
-        
+
         if (emailResult.recordset.length > 0) {
           maBenhNhan = emailResult.recordset[0].ma_benh_nhan;
         }
@@ -1229,10 +1269,10 @@ router.post('/medical-records/:id/pay', protect, async (req, res) => {
     }
 
     const pool = await poolPromise;
-    
+
     // Tìm ma_benh_nhan từ email hoặc username
     let maBenhNhan = null;
-    
+
     if (email) {
       const emailResult = await pool.request()
         .input('email', email)
@@ -1241,24 +1281,24 @@ router.post('/medical-records/:id/pay', protect, async (req, res) => {
           FROM BENH_NHAN
           WHERE email = @email
         `);
-      
+
       if (emailResult.recordset.length > 0) {
         maBenhNhan = emailResult.recordset[0].ma_benh_nhan;
       }
     }
-    
+
     if (!maBenhNhan && (username || userId)) {
       const identifier = username || userId;
       const isUserId = userId && isValidUUID(userId);
-      
+
       let userResult;
       if (isUserId) {
         userResult = await pool.request()
           .input('identifier', identifier)
           .input('userId', userId)
           .query(`
-            SELECT TOP 1 email, username
-            FROM ${TABLE}
+          SELECT TOP 1 email, username
+          FROM ${TABLE}
             WHERE (username = @identifier OR id = @userId) AND role = 'patient'
           `);
       } else {
@@ -1268,9 +1308,9 @@ router.post('/medical-records/:id/pay', protect, async (req, res) => {
             SELECT TOP 1 email, username
             FROM ${TABLE}
             WHERE username = @identifier AND role = 'patient'
-          `);
+        `);
       }
-      
+
       if (userResult.recordset.length > 0) {
         const userEmail = userResult.recordset[0].email || userResult.recordset[0].username;
         const emailResult = await pool.request()
@@ -1280,7 +1320,7 @@ router.post('/medical-records/:id/pay', protect, async (req, res) => {
             FROM BENH_NHAN
             WHERE email = @email
           `);
-        
+
         if (emailResult.recordset.length > 0) {
           maBenhNhan = emailResult.recordset[0].ma_benh_nhan;
         }
@@ -1343,7 +1383,7 @@ router.post('/medical-records/:id/pay', protect, async (req, res) => {
     // Tạo mã thanh toán
     const maThanhToan = uuidv4();
     const orderId = `HS-${hoSo.ma_ho_so}-${Date.now()}`;
-    
+
     // Giả sử số tiền (có thể lấy từ bảng khác hoặc tính toán)
     const amount = 500000; // 500,000 VND - có thể lấy từ bảng HO_SO_KHAM hoặc bảng khác
 
@@ -1367,8 +1407,8 @@ router.post('/medical-records/:id/pay', protect, async (req, res) => {
       amount: amount,
       redirectUrl: redirectUrl,
       ipnUrl: ipnUrl,
-      extraData: JSON.stringify({ 
-        ma_ho_so: hoSo.ma_ho_so, 
+      extraData: JSON.stringify({
+        ma_ho_so: hoSo.ma_ho_so,
         patientId: maBenhNhan,
         maThanhToan: maThanhToan,
         type: 'medical-record'
@@ -1631,10 +1671,10 @@ router.post('/invoices/:id/pay', protect, async (req, res) => {
     }
 
     const pool = await poolPromise;
-    
+
     // Tìm ma_benh_nhan từ email hoặc username
     let maBenhNhan = null;
-    
+
     if (email) {
       const emailResult = await pool.request()
         .input('email', email)
@@ -1643,24 +1683,24 @@ router.post('/invoices/:id/pay', protect, async (req, res) => {
           FROM BENH_NHAN
           WHERE email = @email
         `);
-      
+
       if (emailResult.recordset.length > 0) {
         maBenhNhan = emailResult.recordset[0].ma_benh_nhan;
       }
     }
-    
+
     if (!maBenhNhan && (username || userId)) {
       const identifier = username || userId;
       const isUserId = userId && isValidUUID(userId);
-      
+
       let userResult;
       if (isUserId) {
         userResult = await pool.request()
           .input('identifier', identifier)
           .input('userId', userId)
           .query(`
-            SELECT TOP 1 email, username
-            FROM ${TABLE}
+          SELECT TOP 1 email, username
+          FROM ${TABLE}
             WHERE (username = @identifier OR id = @userId) AND role = 'patient'
           `);
       } else {
@@ -1670,9 +1710,9 @@ router.post('/invoices/:id/pay', protect, async (req, res) => {
             SELECT TOP 1 email, username
             FROM ${TABLE}
             WHERE username = @identifier AND role = 'patient'
-          `);
+        `);
       }
-      
+
       if (userResult.recordset.length > 0) {
         const userEmail = userResult.recordset[0].email || userResult.recordset[0].username;
         const emailResult = await pool.request()
@@ -1682,7 +1722,7 @@ router.post('/invoices/:id/pay', protect, async (req, res) => {
             FROM BENH_NHAN
             WHERE email = @email
           `);
-        
+
         if (emailResult.recordset.length > 0) {
           maBenhNhan = emailResult.recordset[0].ma_benh_nhan;
         }
@@ -1745,7 +1785,7 @@ router.post('/invoices/:id/pay', protect, async (req, res) => {
     // Tạo mã thanh toán
     const maThanhToan = uuidv4();
     const orderId = `INV-${hoSo.ma_ho_so}-${Date.now()}`;
-    
+
     // Giả sử số tiền (có thể lấy từ bảng khác hoặc tính toán)
     const amount = 500000; // 500,000 VND - có thể lấy từ bảng HO_SO_KHAM hoặc bảng khác
 
@@ -1769,8 +1809,8 @@ router.post('/invoices/:id/pay', protect, async (req, res) => {
       amount: amount,
       redirectUrl: redirectUrl,
       ipnUrl: ipnUrl,
-      extraData: JSON.stringify({ 
-        invoiceId: hoSo.ma_ho_so, 
+      extraData: JSON.stringify({
+        invoiceId: hoSo.ma_ho_so,
         patientId: maBenhNhan,
         maThanhToan: maThanhToan
       }),
@@ -1986,9 +2026,9 @@ router.get('/profile', protect, async (req, res) => {
     const username = req.user?.username;
     const userId = req.user?.id;
     const email = req.user?.email;
-    
+
     console.log('🔍 GET /api/patient/profile - User info:', { username, userId, email });
-    
+
     if (!username && !userId && !email) {
       return res.status(401).json({
         success: false,
@@ -1997,11 +2037,11 @@ router.get('/profile', protect, async (req, res) => {
     }
 
     const pool = await poolPromise;
-    
+
     // Lấy thông tin từ USERS_AUTH trước
     const identifier = username || userId || email;
     const isUserId = userId && isValidUUID(userId);
-    
+
     let userResult;
     if (isUserId) {
       // Nếu identifier là UUID, có thể so sánh với id
@@ -2033,11 +2073,11 @@ router.get('/profile', protect, async (req, res) => {
 
     const user = userResult.recordset[0];
     const userEmail = user.email || email;
-    
+
     // Tìm ma_benh_nhan từ BENH_NHAN
     let maBenhNhan = null;
     let benhNhan = null;
-    
+
     if (userEmail) {
       const benhNhanResult = await pool.request()
         .input('email', userEmail)
@@ -2057,13 +2097,13 @@ router.get('/profile', protect, async (req, res) => {
           FROM BENH_NHAN
           WHERE email = @email
         `);
-      
+
       if (benhNhanResult.recordset.length > 0) {
         maBenhNhan = benhNhanResult.recordset[0].ma_benh_nhan;
         benhNhan = benhNhanResult.recordset[0];
       }
     }
-    
+
     // Nếu không tìm thấy trong BENH_NHAN, tạo mới
     if (!maBenhNhan) {
       maBenhNhan = uuidv4();
@@ -2079,7 +2119,7 @@ router.get('/profile', protect, async (req, res) => {
           INSERT INTO BENH_NHAN (ma_benh_nhan, ten_benh_nhan, email, so_dien_thoai, ngay_sinh, gioi_tinh, dia_chi)
           VALUES (@ma_benh_nhan, @ten_benh_nhan, @email, @so_dien_thoai, @ngay_sinh, @gioi_tinh, @dia_chi)
         `);
-      
+
       // Lấy lại thông tin vừa tạo
       const newResult = await pool.request()
         .input('ma_benh_nhan', maBenhNhan)
@@ -2099,11 +2139,11 @@ router.get('/profile', protect, async (req, res) => {
           FROM BENH_NHAN
           WHERE ma_benh_nhan = @ma_benh_nhan
         `);
-      
+
       benhNhan = newResult.recordset[0];
       console.log('✅ Created new BENH_NHAN record:', maBenhNhan);
     }
-    
+
     // Map dữ liệu sang format frontend mong đợi
     const profile = {
       id: user.id || maBenhNhan,
@@ -2111,8 +2151,8 @@ router.get('/profile', protect, async (req, res) => {
       email: benhNhan.email || user.email || '',
       phone: benhNhan.so_dien_thoai || user.phone || '',
       address: benhNhan.dia_chi || user.address || '',
-      dateOfBirth: benhNhan.ngay_sinh 
-        ? new Date(benhNhan.ngay_sinh).toISOString().split('T')[0] 
+      dateOfBirth: benhNhan.ngay_sinh
+        ? new Date(benhNhan.ngay_sinh).toISOString().split('T')[0]
         : (user.date_of_birth ? new Date(user.date_of_birth).toISOString().split('T')[0] : null),
       gender: benhNhan.gioi_tinh || user.gender || 'other',
       bloodType: benhNhan.nhom_mau || null,
@@ -2147,7 +2187,7 @@ router.put('/profile', protect, async (req, res) => {
     const username = req.user?.username;
     const userId = req.user?.id;
     const email = req.user?.email;
-    
+
     if (!username && !userId && !email) {
       return res.status(401).json({
         success: false,
@@ -2157,7 +2197,7 @@ router.put('/profile', protect, async (req, res) => {
 
     const pool = await poolPromise;
     const maBenhNhan = await findMaBenhNhan(pool, username, userId, email);
-    
+
     if (!maBenhNhan) {
       return res.status(404).json({
         success: false,
@@ -2165,11 +2205,11 @@ router.put('/profile', protect, async (req, res) => {
       });
     }
 
-    const { 
-      email: newEmail, 
-      phone, 
-      address, 
-      dateOfBirth, 
+    const {
+      email: newEmail,
+      phone,
+      address,
+      dateOfBirth,
       emergencyContact,
       bloodType,
       allergies,
@@ -2225,7 +2265,7 @@ router.put('/profile', protect, async (req, res) => {
       try {
         const identifier = username || userId || email;
         const isUserId = userId && isValidUUID(userId);
-        
+
         if (isUserId) {
           await pool.request()
             .input('identifier', identifier)
@@ -2273,11 +2313,11 @@ router.put('/profile', protect, async (req, res) => {
       `);
 
     const updated = updatedResult.recordset[0];
-    
+
     // Lấy thông tin từ USERS_AUTH
     const identifier = username || userId || newEmail || email;
     const isUserId = userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
-    
+
     let userResult;
     if (isUserId) {
       userResult = await pool.request()
@@ -2331,6 +2371,609 @@ router.put('/profile', protect, async (req, res) => {
     res.status(500).json({
       success: false,
       message: err.message || 'Lỗi khi cập nhật thông tin profile'
+    });
+  }
+});
+
+// GET /api/patient/insurance - Lấy thông tin BHYT của bệnh nhân từ bảng BHYT_THE
+router.get('/insurance', protect, async (req, res) => {
+  try {
+    const username = req.user?.username;
+    const userId = req.user?.id;
+    const email = req.user?.email;
+
+    console.log('🔍 GET /api/patient/insurance - User info:', { username, userId, email });
+
+    if (!username && !userId && !email) {
+      return res.status(401).json({
+        success: false,
+        message: 'Không xác định được bệnh nhân'
+      });
+    }
+
+    const pool = await poolPromise;
+
+    // Lấy ma_benh_nhan từ USERS_AUTH và BENH_NHAN
+    const identifier = username || userId || email;
+    const isUserId = userId && isValidUUID(userId);
+
+    let userResult;
+    if (isUserId) {
+      userResult = await pool.request()
+        .input('identifier', identifier)
+        .input('userId', userId)
+        .query(`
+          SELECT TOP 1 id, username, email
+          FROM ${TABLE}
+          WHERE (username = @identifier OR id = @userId OR email = @identifier) AND role = 'patient'
+        `);
+    } else {
+      userResult = await pool.request()
+        .input('identifier', identifier)
+        .query(`
+          SELECT TOP 1 id, username, email
+          FROM ${TABLE}
+          WHERE (username = @identifier OR email = @identifier) AND role = 'patient'
+        `);
+    }
+
+    if (userResult.recordset.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy thông tin bệnh nhân'
+      });
+    }
+
+    const userEmail = userResult.recordset[0].email || userResult.recordset[0].username;
+
+    // Lấy ma_benh_nhan từ BENH_NHAN
+    const benhNhanResult = await pool.request()
+      .input('email', userEmail)
+      .query(`
+        SELECT TOP 1 ma_benh_nhan
+        FROM BENH_NHAN
+        WHERE email = @email
+      `);
+
+    if (benhNhanResult.recordset.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy mã bệnh nhân'
+      });
+    }
+
+    const maBenhNhan = benhNhanResult.recordset[0].ma_benh_nhan;
+
+    console.log('🔍 GET /api/patient/insurance - ma_benh_nhan:', maBenhNhan);
+
+    // Lấy thông tin BHYT từ BHYT_THE
+    // Try to get with image columns first, fallback if columns don't exist
+    let bhytResult;
+    try {
+      bhytResult = await pool.request()
+        .input('ma_benh_nhan', maBenhNhan)
+        .query(`
+          SELECT TOP 1
+            so_the,
+            ISNULL(ma_noi_dang_ky_kcb, '') as ma_noi_dang_ky_kcb,
+            ty_le_chi_tra,
+            ty_le_dong_chi_tra,
+            hieu_luc_tu,
+            hieu_luc_den,
+            ISNULL(trang_thai, '') as trang_thai,
+            ma_benh_nhan,
+            ISNULL(anh_mat_truoc, '') as anh_mat_truoc,
+            ISNULL(anh_mat_sau, '') as anh_mat_sau
+          FROM BHYT_THE
+          WHERE ma_benh_nhan = @ma_benh_nhan
+          ORDER BY hieu_luc_den DESC
+        `);
+    } catch (queryError) {
+      // If columns don't exist, try without image columns
+      if (queryError.message && queryError.message.includes('Invalid column name')) {
+        console.log('⚠️ Image columns not found, querying without them');
+        bhytResult = await pool.request()
+          .input('ma_benh_nhan', maBenhNhan)
+          .query(`
+            SELECT TOP 1
+              so_the,
+              ISNULL(ma_noi_dang_ky_kcb, '') as ma_noi_dang_ky_kcb,
+              ty_le_chi_tra,
+              ty_le_dong_chi_tra,
+              hieu_luc_tu,
+              hieu_luc_den,
+              ISNULL(trang_thai, '') as trang_thai,
+              ma_benh_nhan
+            FROM BHYT_THE
+            WHERE ma_benh_nhan = @ma_benh_nhan
+            ORDER BY hieu_luc_den DESC
+          `);
+      } else {
+        throw queryError;
+      }
+    }
+
+    console.log('🔍 BHYT query result:', {
+      recordCount: bhytResult.recordset.length,
+      records: bhytResult.recordset
+    });
+
+    if (bhytResult.recordset.length === 0) {
+      console.log('⚠️ No BHYT data found for ma_benh_nhan:', maBenhNhan);
+      return res.json({
+        success: true,
+        data: null,
+        message: 'Bệnh nhân chưa có thông tin BHYT'
+      });
+    }
+
+    const bhyt = bhytResult.recordset[0];
+
+    // Format dữ liệu
+    const baseUrl = process.env.API_URL || 'http://localhost:5000';
+    const insuranceData = {
+      soThe: bhyt.so_the || '',
+      maNoiDangKyKCB: bhyt.ma_noi_dang_ky_kcb || null,
+      tyLeChiTra: bhyt.ty_le_chi_tra !== null && bhyt.ty_le_chi_tra !== undefined ? parseFloat(bhyt.ty_le_chi_tra) : null,
+      tyLeDongChiTra: bhyt.ty_le_dong_chi_tra !== null && bhyt.ty_le_dong_chi_tra !== undefined ? parseFloat(bhyt.ty_le_dong_chi_tra) : null,
+      hieuLucTu: bhyt.hieu_luc_tu ? new Date(bhyt.hieu_luc_tu).toISOString().split('T')[0] : null,
+      hieuLucDen: bhyt.hieu_luc_den ? new Date(bhyt.hieu_luc_den).toISOString().split('T')[0] : null,
+      trangThai: bhyt.trang_thai || null,
+      maBenhNhan: bhyt.ma_benh_nhan,
+      // Check if image columns exist in result
+      anhMatTruoc: bhyt.anh_mat_truoc !== undefined && bhyt.anh_mat_truoc && bhyt.anh_mat_truoc !== '' ? `${baseUrl}/uploads/bhyt/${bhyt.anh_mat_truoc}` : null,
+      anhMatSau: bhyt.anh_mat_sau !== undefined && bhyt.anh_mat_sau && bhyt.anh_mat_sau !== '' ? `${baseUrl}/uploads/bhyt/${bhyt.anh_mat_sau}` : null
+    };
+
+    console.log('📊 Formatted insurance data:', insuranceData);
+
+    console.log('✅ BHYT retrieved successfully for:', maBenhNhan);
+
+    res.json({
+      success: true,
+      data: insuranceData
+    });
+  } catch (err) {
+    console.error('❌ SQL patient insurance GET error:', err.message);
+    console.error('Error stack:', err.stack);
+
+    // Check for specific error types
+    if (err.message && err.message.includes('Invalid column name')) {
+      return res.status(500).json({
+        success: false,
+        message: 'Database chưa có cột ảnh. Vui lòng chạy: ALTER TABLE BHYT_THE ADD anh_mat_truoc NVARCHAR(255) NULL, anh_mat_sau NVARCHAR(255) NULL;',
+        error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Lỗi khi lấy thông tin BHYT',
+      error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+});
+
+// POST /api/patient/insurance/upload - Upload ảnh BHYT (2 mặt)
+router.post('/insurance/upload', protect, (req, res, next) => {
+  uploadBHYT.fields([
+    { name: 'mat_truoc', maxCount: 1 },
+    { name: 'mat_sau', maxCount: 1 }
+  ])(req, res, (err) => {
+    if (err) {
+      console.error('❌ Multer error:', err.message);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({
+          success: false,
+          message: 'Kích thước file quá lớn. Tối đa 5MB mỗi file.'
+        });
+      }
+      if (err.message.includes('Invalid file type')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Loại file không hợp lệ. Chỉ chấp nhận JPG, PNG, WEBP.'
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: err.message || 'Lỗi khi upload file'
+      });
+    }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    console.log('📸 Upload BHYT request received');
+    console.log('Request files:', req.files ? Object.keys(req.files) : 'No files');
+    console.log('Request body:', req.body);
+
+    const username = req.user?.username;
+    const userId = req.user?.id;
+    const email = req.user?.email;
+
+    console.log('User info:', { username, userId, email });
+
+    if (!req.files || (!req.files['mat_truoc'] && !req.files['mat_sau'])) {
+      console.log('⚠️ No files in request');
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng chọn ít nhất một ảnh để upload'
+      });
+    }
+
+    const pool = await poolPromise;
+
+    // Lấy ma_benh_nhan
+    const identifier = username || userId || email;
+    const isUserId = userId && isValidUUID(userId);
+
+    let userResult;
+    if (isUserId) {
+      userResult = await pool.request()
+        .input('identifier', identifier)
+        .input('userId', userId)
+        .query(`
+          SELECT TOP 1 id, username, email
+          FROM ${TABLE}
+          WHERE (username = @identifier OR id = @userId OR email = @identifier) AND role = 'patient'
+        `);
+    } else {
+      userResult = await pool.request()
+        .input('identifier', identifier)
+        .query(`
+          SELECT TOP 1 id, username, email
+          FROM ${TABLE}
+          WHERE (username = @identifier OR email = @identifier) AND role = 'patient'
+        `);
+    }
+
+    if (userResult.recordset.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy thông tin bệnh nhân'
+      });
+    }
+
+    const userEmail = userResult.recordset[0].email || userResult.recordset[0].username;
+
+    const benhNhanResult = await pool.request()
+      .input('email', userEmail)
+      .query(`
+        SELECT TOP 1 ma_benh_nhan
+        FROM BENH_NHAN
+        WHERE email = @email
+      `);
+
+    if (benhNhanResult.recordset.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy mã bệnh nhân'
+      });
+    }
+
+    const maBenhNhan = benhNhanResult.recordset[0].ma_benh_nhan;
+
+    // Get filenames
+    const matTruocFile = req.files['mat_truoc'] ? req.files['mat_truoc'][0] : null;
+    const matSauFile = req.files['mat_sau'] ? req.files['mat_sau'][0] : null;
+
+    const anhMatTruoc = matTruocFile ? matTruocFile.filename : null;
+    const anhMatSau = matSauFile ? matSauFile.filename : null;
+
+    console.log('📸 Upload BHYT images:', {
+      maBenhNhan,
+      anhMatTruoc,
+      anhMatSau
+    });
+
+    // Check if BHYT record exists
+    const existingResult = await pool.request()
+      .input('ma_benh_nhan', maBenhNhan)
+      .query(`
+        SELECT TOP 1 so_the
+        FROM BHYT_THE
+        WHERE ma_benh_nhan = @ma_benh_nhan
+      `);
+
+    if (existingResult.recordset.length > 0) {
+      // Update existing record
+      const updateFields = [];
+      const updateRequest = pool.request().input('ma_benh_nhan', maBenhNhan);
+
+      if (anhMatTruoc) {
+        updateFields.push('anh_mat_truoc = @anh_mat_truoc');
+        updateRequest.input('anh_mat_truoc', anhMatTruoc);
+      }
+      if (anhMatSau) {
+        updateFields.push('anh_mat_sau = @anh_mat_sau');
+        updateRequest.input('anh_mat_sau', anhMatSau);
+      }
+
+      if (updateFields.length > 0) {
+        try {
+          const updateResult = await updateRequest.query(`
+            UPDATE BHYT_THE
+            SET ${updateFields.join(', ')}
+            WHERE ma_benh_nhan = @ma_benh_nhan
+          `);
+          console.log('✅ BHYT images updated, rows affected:', updateResult.rowsAffected);
+        } catch (dbError) {
+          console.error('❌ Database update error:', dbError.message);
+          // Check if columns exist
+          if (dbError.message.includes('Invalid column name')) {
+            return res.status(500).json({
+              success: false,
+              message: 'Cột ảnh chưa được tạo trong database. Vui lòng chạy: ALTER TABLE BHYT_THE ADD anh_mat_truoc NVARCHAR(255) NULL, anh_mat_sau NVARCHAR(255) NULL;'
+            });
+          }
+          throw dbError;
+        }
+      }
+    } else {
+      return res.status(404).json({
+        success: false,
+        message: 'Chưa có thông tin BHYT. Vui lòng tạo thông tin BHYT trước khi upload ảnh.'
+      });
+    }
+
+    const baseUrl = process.env.API_URL || 'http://localhost:5000';
+    res.json({
+      success: true,
+      data: {
+        anhMatTruoc: anhMatTruoc ? `${baseUrl}/uploads/bhyt/${anhMatTruoc}` : null,
+        anhMatSau: anhMatSau ? `${baseUrl}/uploads/bhyt/${anhMatSau}` : null
+      },
+      message: 'Upload ảnh BHYT thành công'
+    });
+  } catch (err) {
+    console.error('❌ Upload BHYT images error:', err.message);
+    console.error('Error stack:', err.stack);
+    console.error('Request details:', {
+      hasFiles: !!req.files,
+      filesKeys: req.files ? Object.keys(req.files) : [],
+      user: req.user ? { username: req.user.username, id: req.user.id } : null
+    });
+
+    // Check for specific error types
+    if (err.message && err.message.includes('Invalid column name')) {
+      return res.status(500).json({
+        success: false,
+        message: 'Database chưa có cột ảnh. Vui lòng chạy: ALTER TABLE BHYT_THE ADD anh_mat_truoc NVARCHAR(255) NULL, anh_mat_sau NVARCHAR(255) NULL;'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Lỗi khi upload ảnh BHYT',
+      error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+});
+
+// PUT /api/patient/insurance - Cập nhật thông tin BHYT của bệnh nhân
+router.put('/insurance', protect, async (req, res) => {
+  try {
+    const username = req.user?.username;
+    const userId = req.user?.id;
+    const email = req.user?.email;
+
+    const {
+      soThe,
+      maNoiDangKyKCB,
+      tyLeChiTra,
+      tyLeDongChiTra,
+      hieuLucTu,
+      hieuLucDen,
+      trangThai
+    } = req.body;
+
+    if (!soThe) {
+      return res.status(400).json({
+        success: false,
+        message: 'Số thẻ BHYT không được để trống'
+      });
+    }
+
+    const pool = await poolPromise;
+
+    // Lấy ma_benh_nhan
+    const identifier = username || userId || email;
+    const isUserId = userId && isValidUUID(userId);
+
+    let userResult;
+    if (isUserId) {
+      userResult = await pool.request()
+        .input('identifier', identifier)
+        .input('userId', userId)
+        .query(`
+          SELECT TOP 1 id, username, email
+          FROM ${TABLE}
+          WHERE (username = @identifier OR id = @userId OR email = @identifier) AND role = 'patient'
+        `);
+    } else {
+      userResult = await pool.request()
+        .input('identifier', identifier)
+        .query(`
+          SELECT TOP 1 id, username, email
+          FROM ${TABLE}
+          WHERE (username = @identifier OR email = @identifier) AND role = 'patient'
+        `);
+    }
+
+    if (userResult.recordset.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy thông tin bệnh nhân'
+      });
+    }
+
+    const userEmail = userResult.recordset[0].email || userResult.recordset[0].username;
+
+    const benhNhanResult = await pool.request()
+      .input('email', userEmail)
+      .query(`
+        SELECT TOP 1 ma_benh_nhan
+        FROM BENH_NHAN
+        WHERE email = @email
+      `);
+
+    if (benhNhanResult.recordset.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy mã bệnh nhân'
+      });
+    }
+
+    const maBenhNhan = benhNhanResult.recordset[0].ma_benh_nhan;
+
+    console.log('🔍 PUT /api/patient/insurance - Data received:', {
+      soThe,
+      maNoiDangKyKCB,
+      tyLeChiTra,
+      tyLeDongChiTra,
+      hieuLucTu,
+      hieuLucDen,
+      trangThai,
+      maBenhNhan
+    });
+
+    // Kiểm tra xem đã có BHYT cho bệnh nhân này chưa (theo ma_benh_nhan)
+    const existingResult = await pool.request()
+      .input('ma_benh_nhan', maBenhNhan)
+      .query(`
+        SELECT TOP 1 so_the
+        FROM BHYT_THE
+        WHERE ma_benh_nhan = @ma_benh_nhan
+      `);
+
+    console.log('🔍 Existing BHYT check:', {
+      hasExisting: existingResult.recordset.length > 0,
+      existingSoThe: existingResult.recordset.length > 0 ? existingResult.recordset[0].so_the : null
+    });
+
+    if (existingResult.recordset.length > 0) {
+      // Cập nhật BHYT hiện có
+      const existingSoThe = existingResult.recordset[0].so_the;
+      console.log('📝 Updating existing BHYT:', existingSoThe);
+
+      const updateResult = await pool.request()
+        .input('so_the', soThe)
+        .input('ma_noi_dang_ky_kcb', maNoiDangKyKCB || null)
+        .input('ty_le_chi_tra', tyLeChiTra !== null && tyLeChiTra !== undefined ? tyLeChiTra : null)
+        .input('ty_le_dong_chi_tra', tyLeDongChiTra !== null && tyLeDongChiTra !== undefined ? tyLeDongChiTra : null)
+        .input('hieu_luc_tu', hieuLucTu || null)
+        .input('hieu_luc_den', hieuLucDen || null)
+        .input('trang_thai', trangThai || null)
+        .input('ma_benh_nhan', maBenhNhan)
+        .input('existing_so_the', existingSoThe)
+        .query(`
+          UPDATE BHYT_THE
+          SET 
+            so_the = @so_the,
+            ma_noi_dang_ky_kcb = @ma_noi_dang_ky_kcb,
+            ty_le_chi_tra = @ty_le_chi_tra,
+            ty_le_dong_chi_tra = @ty_le_dong_chi_tra,
+            hieu_luc_tu = @hieu_luc_tu,
+            hieu_luc_den = @hieu_luc_den,
+            trang_thai = @trang_thai,
+            ma_benh_nhan = @ma_benh_nhan
+          WHERE so_the = @existing_so_the
+        `);
+
+      console.log('✅ UPDATE executed, rows affected:', updateResult.rowsAffected);
+    } else {
+      // Tạo mới BHYT
+      console.log('📝 Creating new BHYT for patient:', maBenhNhan);
+
+      const insertResult = await pool.request()
+        .input('so_the', soThe)
+        .input('ma_noi_dang_ky_kcb', maNoiDangKyKCB || null)
+        .input('ty_le_chi_tra', tyLeChiTra !== null && tyLeChiTra !== undefined ? tyLeChiTra : null)
+        .input('ty_le_dong_chi_tra', tyLeDongChiTra !== null && tyLeDongChiTra !== undefined ? tyLeDongChiTra : null)
+        .input('hieu_luc_tu', hieuLucTu || null)
+        .input('hieu_luc_den', hieuLucDen || null)
+        .input('trang_thai', trangThai || null)
+        .input('ma_benh_nhan', maBenhNhan)
+        .query(`
+          INSERT INTO BHYT_THE (
+            so_the,
+            ma_noi_dang_ky_kcb,
+            ty_le_chi_tra,
+            ty_le_dong_chi_tra,
+            hieu_luc_tu,
+            hieu_luc_den,
+            trang_thai,
+            ma_benh_nhan
+          )
+          VALUES (
+            @so_the,
+            @ma_noi_dang_ky_kcb,
+            @ty_le_chi_tra,
+            @ty_le_dong_chi_tra,
+            @hieu_luc_tu,
+            @hieu_luc_den,
+            @trang_thai,
+            @ma_benh_nhan
+          )
+        `);
+
+      console.log('✅ INSERT executed, rows affected:', insertResult.rowsAffected);
+    }
+
+    // Lấy lại thông tin đã cập nhật
+    const updatedResult = await pool.request()
+      .input('ma_benh_nhan', maBenhNhan)
+      .query(`
+        SELECT TOP 1
+          so_the,
+          ma_noi_dang_ky_kcb,
+          ty_le_chi_tra,
+          ty_le_dong_chi_tra,
+          hieu_luc_tu,
+          hieu_luc_den,
+          trang_thai,
+          ma_benh_nhan
+        FROM BHYT_THE
+        WHERE ma_benh_nhan = @ma_benh_nhan
+        ORDER BY hieu_luc_den DESC
+      `);
+
+    if (updatedResult.recordset.length === 0) {
+      console.error('❌ No data found after insert/update');
+      return res.status(500).json({
+        success: false,
+        message: 'Lưu dữ liệu thành công nhưng không thể lấy lại thông tin'
+      });
+    }
+
+    const bhyt = updatedResult.recordset[0];
+    const insuranceData = {
+      soThe: bhyt.so_the,
+      maNoiDangKyKCB: bhyt.ma_noi_dang_ky_kcb || null,
+      tyLeChiTra: bhyt.ty_le_chi_tra ? parseFloat(bhyt.ty_le_chi_tra) : null,
+      tyLeDongChiTra: bhyt.ty_le_dong_chi_tra ? parseFloat(bhyt.ty_le_dong_chi_tra) : null,
+      hieuLucTu: bhyt.hieu_luc_tu ? new Date(bhyt.hieu_luc_tu).toISOString().split('T')[0] : null,
+      hieuLucDen: bhyt.hieu_luc_den ? new Date(bhyt.hieu_luc_den).toISOString().split('T')[0] : null,
+      trangThai: bhyt.trang_thai || null,
+      maBenhNhan: bhyt.ma_benh_nhan
+    };
+
+    console.log('✅ BHYT saved successfully for:', maBenhNhan);
+    console.log('✅ Saved data:', insuranceData);
+
+    res.json({
+      success: true,
+      data: insuranceData,
+      message: 'Cập nhật thông tin BHYT thành công'
+    });
+  } catch (err) {
+    console.error('❌ SQL patient insurance PUT error:', err.message);
+    console.error('Error stack:', err.stack);
+    console.error('Request body:', req.body);
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Lỗi khi cập nhật thông tin BHYT',
+      error: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
   }
 });

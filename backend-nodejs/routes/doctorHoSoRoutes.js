@@ -3,6 +3,317 @@ const { poolPromise } = require('../database/db-config');
 const { protect } = require('../middleware/auth.middleware');
 const { v4: uuidv4 } = require('uuid');
 
+// GET /api/doctor/dashboard - Lấy thống kê dashboard cho bác sĩ
+router.get('/dashboard', protect, async (req, res) => {
+  try {
+    const username = req.user?.username;
+    const userId = req.user?.id;
+    
+    if (!username && !userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Không xác định được bác sĩ'
+      });
+    }
+
+    const pool = await poolPromise;
+    const TABLE = process.env.SQL_TABLE_USERS || 'USERS_AUTH';
+    
+    // Tìm ma_bac_si từ username hoặc id
+    const userQuery = `
+      SELECT TOP 1 username, id
+      FROM ${TABLE}
+      WHERE (username = @identifier OR id = @identifier) AND role = 'doctor'
+    `;
+    
+    const userResult = await pool.request()
+      .input('identifier', username || userId)
+      .query(userQuery);
+    
+    if (userResult.recordset.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy thông tin bác sĩ'
+      });
+    }
+    
+    const doctorUsername = userResult.recordset[0].username;
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+    
+    // Tính ngày đầu tuần (Thứ 2)
+    const dayOfWeek = today.getDay();
+    const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Nếu Chủ nhật thì lùi 6 ngày
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - diff);
+    weekStart.setHours(0, 0, 0, 0);
+    
+    // 1. Số lịch hẹn hôm nay
+    const todayAppointmentsResult = await pool.request()
+      .input('ma_bac_si', doctorUsername)
+      .input('today_start', todayStart)
+      .input('today_end', todayEnd)
+      .query(`
+        SELECT COUNT(*) AS count
+        FROM LICH_HEN lh
+        INNER JOIN CA_BAC_SI ca ON lh.ma_ca = ca.ma_ca
+        WHERE ca.ma_bac_si = @ma_bac_si
+          AND CAST(lh.thoi_gian_hen AS DATE) = CAST(@today_start AS DATE)
+          AND lh.trang_thai NOT IN ('cancelled', 'huy', 'đã hủy')
+      `);
+    
+    const todayAppointmentsCount = todayAppointmentsResult.recordset[0]?.count || 0;
+    
+    // 2. Số lịch hẹn hôm qua để tính thay đổi
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStart = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+    const yesterdayEnd = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), 23, 59, 59);
+    
+    const yesterdayAppointmentsResult = await pool.request()
+      .input('ma_bac_si', doctorUsername)
+      .input('yesterday_start', yesterdayStart)
+      .input('yesterday_end', yesterdayEnd)
+      .query(`
+        SELECT COUNT(*) AS count
+        FROM LICH_HEN lh
+        INNER JOIN CA_BAC_SI ca ON lh.ma_ca = ca.ma_ca
+        WHERE ca.ma_bac_si = @ma_bac_si
+          AND CAST(lh.thoi_gian_hen AS DATE) = CAST(@yesterday_start AS DATE)
+          AND lh.trang_thai NOT IN ('cancelled', 'huy', 'đã hủy')
+      `);
+    
+    const yesterdayAppointmentsCount = yesterdayAppointmentsResult.recordset[0]?.count || 0;
+    const appointmentsChange = todayAppointmentsCount - yesterdayAppointmentsCount;
+    
+    // 3. Số bệnh nhân chờ khám (pending appointments hôm nay)
+    const waitingPatientsResult = await pool.request()
+      .input('ma_bac_si', doctorUsername)
+      .input('today_start', todayStart)
+      .input('today_end', todayEnd)
+      .query(`
+        SELECT COUNT(*) AS count
+        FROM LICH_HEN lh
+        INNER JOIN CA_BAC_SI ca ON lh.ma_ca = ca.ma_ca
+        WHERE ca.ma_bac_si = @ma_bac_si
+          AND CAST(lh.thoi_gian_hen AS DATE) = CAST(@today_start AS DATE)
+          AND lh.trang_thai IN ('pending', 'chờ khám', 'đã xác nhận')
+      `);
+    
+    const waitingPatientsCount = waitingPatientsResult.recordset[0]?.count || 0;
+    
+    // 4. Số bệnh nhân chờ hôm qua
+    const yesterdayWaitingResult = await pool.request()
+      .input('ma_bac_si', doctorUsername)
+      .input('yesterday_start', yesterdayStart)
+      .input('yesterday_end', yesterdayEnd)
+      .query(`
+        SELECT COUNT(*) AS count
+        FROM LICH_HEN lh
+        INNER JOIN CA_BAC_SI ca ON lh.ma_ca = ca.ma_ca
+        WHERE ca.ma_bac_si = @ma_bac_si
+          AND CAST(lh.thoi_gian_hen AS DATE) = CAST(@yesterday_start AS DATE)
+          AND lh.trang_thai IN ('pending', 'chờ khám', 'đã xác nhận')
+      `);
+    
+    const yesterdayWaitingCount = yesterdayWaitingResult.recordset[0]?.count || 0;
+    const waitingChange = waitingPatientsCount - yesterdayWaitingCount;
+    
+    // 5. Số ca hoàn thành hôm nay
+    const completedTodayResult = await pool.request()
+      .input('ma_bac_si', doctorUsername)
+      .input('today_start', todayStart)
+      .input('today_end', todayEnd)
+      .query(`
+        SELECT COUNT(*) AS count
+        FROM HO_SO_KHAM hs
+        INNER JOIN LICH_HEN lh ON hs.ma_lich_hen = lh.ma_lich_hen
+        INNER JOIN CA_BAC_SI ca ON lh.ma_ca = ca.ma_ca
+        WHERE ca.ma_bac_si = @ma_bac_si
+          AND CAST(hs.ngay_kham AS DATE) = CAST(@today_start AS DATE)
+          AND hs.trang_thai IN ('completed', 'hoàn thành', 'done')
+      `);
+    
+    const completedTodayCount = completedTodayResult.recordset[0]?.count || 0;
+    
+    // 6. Tỷ lệ hoàn thành
+    const completionRate = todayAppointmentsCount > 0 
+      ? Math.round((completedTodayCount / todayAppointmentsCount) * 100) 
+      : 0;
+    
+    // 7. Số cảnh báo khẩn (appointments có ghi chú khẩn hoặc trạng thái urgent)
+    const urgentCountResult = await pool.request()
+      .input('ma_bac_si', doctorUsername)
+      .input('today_start', todayStart)
+      .input('today_end', todayEnd)
+      .query(`
+        SELECT COUNT(*) AS count
+        FROM LICH_HEN lh
+        INNER JOIN CA_BAC_SI ca ON lh.ma_ca = ca.ma_ca
+        WHERE ca.ma_bac_si = @ma_bac_si
+          AND CAST(lh.thoi_gian_hen AS DATE) = CAST(@today_start AS DATE)
+          AND (lh.ghi_chu LIKE N'%khẩn%' OR lh.ghi_chu LIKE N'%urgent%' OR lh.trang_thai = 'urgent')
+      `);
+    
+    const urgentCount = urgentCountResult.recordset[0]?.count || 0;
+    
+    // 8. Danh sách lịch hẹn hôm nay
+    const appointmentsTodayResult = await pool.request()
+      .input('ma_bac_si', doctorUsername)
+      .input('today_start', todayStart)
+      .input('today_end', todayEnd)
+      .query(`
+        SELECT 
+          lh.ma_lich_hen,
+          lh.thoi_gian_hen,
+          lh.trang_thai,
+          lh.ghi_chu,
+          bn.ten_benh_nhan,
+          bn.so_dien_thoai,
+          bn.email,
+          ca.bat_dau,
+          ca.ket_thuc,
+          ca.phong_kham,
+          hs.trang_thai AS ho_so_trang_thai
+        FROM LICH_HEN lh
+        INNER JOIN CA_BAC_SI ca ON lh.ma_ca = ca.ma_ca
+        LEFT JOIN BENH_NHAN bn ON lh.ma_benh_nhan = bn.ma_benh_nhan
+        LEFT JOIN HO_SO_KHAM hs ON lh.ma_lich_hen = hs.ma_lich_hen
+        WHERE ca.ma_bac_si = @ma_bac_si
+          AND CAST(lh.thoi_gian_hen AS DATE) = CAST(@today_start AS DATE)
+          AND lh.trang_thai NOT IN ('cancelled', 'huy', 'đã hủy')
+        ORDER BY lh.thoi_gian_hen ASC
+      `);
+    
+    // 9. Hàng đợi bệnh nhân (pending appointments)
+    const waitingQueueResult = await pool.request()
+      .input('ma_bac_si', doctorUsername)
+      .input('today_start', todayStart)
+      .input('today_end', todayEnd)
+      .query(`
+        SELECT TOP 10
+          lh.ma_lich_hen,
+          lh.thoi_gian_hen,
+          bn.ten_benh_nhan,
+          bn.so_dien_thoai,
+          lh.ghi_chu,
+          DATEDIFF(MINUTE, lh.thoi_gian_hen, GETDATE()) AS wait_minutes
+        FROM LICH_HEN lh
+        INNER JOIN CA_BAC_SI ca ON lh.ma_ca = ca.ma_ca
+        LEFT JOIN BENH_NHAN bn ON lh.ma_benh_nhan = bn.ma_benh_nhan
+        WHERE ca.ma_bac_si = @ma_bac_si
+          AND CAST(lh.thoi_gian_hen AS DATE) = CAST(@today_start AS DATE)
+          AND lh.trang_thai IN ('pending', 'chờ khám', 'đã xác nhận')
+          AND lh.thoi_gian_hen <= GETDATE()
+        ORDER BY lh.thoi_gian_hen ASC
+      `);
+    
+    // 10. Thống kê tuần (7 ngày gần nhất)
+    const weekStatsResult = await pool.request()
+      .input('ma_bac_si', doctorUsername)
+      .input('week_start', weekStart)
+      .query(`
+        SELECT 
+          CAST(hs.ngay_kham AS DATE) AS ngay_kham,
+          COUNT(CASE WHEN hs.trang_thai IN ('completed', 'hoàn thành', 'done') THEN 1 END) AS completed,
+          COUNT(CASE WHEN lh.trang_thai IN ('pending', 'chờ khám', 'đã xác nhận') THEN 1 END) AS pending
+        FROM LICH_HEN lh
+        INNER JOIN CA_BAC_SI ca ON lh.ma_ca = ca.ma_ca
+        LEFT JOIN HO_SO_KHAM hs ON lh.ma_lich_hen = hs.ma_lich_hen
+        WHERE ca.ma_bac_si = @ma_bac_si
+          AND CAST(lh.thoi_gian_hen AS DATE) >= CAST(@week_start AS DATE)
+          AND CAST(lh.thoi_gian_hen AS DATE) <= CAST(GETDATE() AS DATE)
+        GROUP BY CAST(hs.ngay_kham AS DATE), CAST(lh.thoi_gian_hen AS DATE)
+        ORDER BY ngay_kham ASC
+      `);
+    
+    // Format appointments
+    const appointments = appointmentsTodayResult.recordset.map(item => {
+      const time = new Date(item.thoi_gian_hen);
+      const hours = time.getHours().toString().padStart(2, '0');
+      const minutes = time.getMinutes().toString().padStart(2, '0');
+      
+      // Xác định trạng thái
+      let status = 'pending';
+      if (item.ho_so_trang_thai === 'completed' || item.ho_so_trang_thai === 'hoàn thành') {
+        status = 'completed';
+      } else if (item.trang_thai === 'confirmed' || item.trang_thai === 'đã xác nhận') {
+        status = 'confirmed';
+      }
+      
+      return {
+        time: `${hours}:${minutes}`,
+        patient: item.ten_benh_nhan || 'Bệnh nhân',
+        reason: item.ghi_chu || 'Khám bệnh',
+        status: status,
+        room: item.phong_kham || 'P' + (item.ma_lich_hen?.substring(0, 3) || '000'),
+        ma_lich_hen: item.ma_lich_hen
+      };
+    });
+    
+    // Format waiting queue
+    const waitingQueue = waitingQueueResult.recordset.map((item, index) => {
+      const waitMinutes = item.wait_minutes || 0;
+      const waitText = waitMinutes < 60 ? `${waitMinutes} phút` : `${Math.floor(waitMinutes / 60)} giờ`;
+      
+      return {
+        name: item.ten_benh_nhan || 'Bệnh nhân',
+        ticket: `#A${String(index + 1).padStart(3, '0')}`,
+        wait: waitText,
+        priority: item.ghi_chu?.includes('khẩn') || item.ghi_chu?.includes('urgent') ? 'Cao' : 'Trung bình',
+        note: item.ghi_chu || 'Khám bệnh',
+        ma_lich_hen: item.ma_lich_hen
+      };
+    });
+    
+    // Format week stats
+    const weekStats = [];
+    const daysOfWeek = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+    
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(weekStart);
+      date.setDate(weekStart.getDate() + i);
+      const dayName = daysOfWeek[date.getDay()];
+      
+      const dayStats = weekStatsResult.recordset.find(s => {
+        const statDate = new Date(s.ngay_kham);
+        return statDate.toDateString() === date.toDateString();
+      });
+      
+      weekStats.push({
+        day: dayName,
+        completed: dayStats?.completed || 0,
+        pending: dayStats?.pending || 0
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        metrics: {
+          todayAppointments: todayAppointmentsCount,
+          appointmentsChange: appointmentsChange,
+          waitingPatients: waitingPatientsCount,
+          waitingChange: waitingChange,
+          completionRate: completionRate,
+          urgentCount: urgentCount
+        },
+        appointments: appointments,
+        waitingQueue: waitingQueue,
+        weekStats: weekStats
+      }
+    });
+  } catch (err) {
+    console.error('❌ SQL doctor dashboard error:', err.message);
+    console.error('Error stack:', err.stack);
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Lỗi khi lấy thống kê dashboard'
+    });
+  }
+});
+
 // GET /api/doctor/ho-so-kham - lấy danh sách hồ sơ khám từ SQL Server
 // Bao gồm cả lịch hẹn từ LICH_HEN (khi bệnh nhân đặt lịch)
 router.get('/ho-so-kham', protect, async (req, res) => {

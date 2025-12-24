@@ -2,22 +2,19 @@
 
 import { DoctorLayout } from '@/components/Layout/DoctorLayout';
 import { useAuthStore } from '@/store/authStore';
+import { doctorApi } from '@/lib/api';
+import { useQuery } from '@tanstack/react-query';
 import {
   Calendar,
   Clock3,
   Activity,
   Users,
-  Stethoscope,
   AlertCircle,
   CheckCircle2,
   Timer,
-  BarChart3,
   TrendingUp,
   ChevronRight,
-  FileText,
-  Heart,
-  ShieldCheck,
-  Phone
+  Loader2
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
 
@@ -28,68 +25,77 @@ const statusStyles: Record<string, string> = {
   cancelled: 'bg-rose-500/15 text-rose-200 border border-rose-500/30',
 };
 
-const mockMetrics = [
-  {
-    title: 'Lịch hẹn hôm nay',
-    value: 12,
-    change: '+3 ca',
-    icon: Calendar,
-    gradient: 'from-cyan-500 to-blue-600'
-  },
-  {
-    title: 'Bệnh nhân chờ',
-    value: 5,
-    change: '-1 so với hôm qua',
-    icon: Users,
-    gradient: 'from-violet-500 to-fuchsia-600'
-  },
-  {
-    title: 'Hoàn thành',
-    value: '78%',
-    change: 'Tỷ lệ xử lý',
-    icon: CheckCircle2,
-    gradient: 'from-emerald-500 to-teal-600'
-  },
-  {
-    title: 'Cảnh báo',
-    value: 2,
-    change: 'Trạng thái khẩn',
-    icon: AlertCircle,
-    gradient: 'from-amber-500 to-orange-600'
-  }
-];
-
-const todayAppointments = [
-  { time: '08:00', patient: 'Phạm Minh Khoa', reason: 'Tái khám tim mạch', status: 'confirmed', room: 'P201' },
-  { time: '09:15', patient: 'Đỗ Thị Thu', reason: 'Đau ngực', status: 'pending', room: 'P201' },
-  { time: '10:30', patient: 'Trần Văn Tùng', reason: 'Khó thở', status: 'confirmed', room: 'P203' },
-  { time: '13:30', patient: 'Lê Thị Ngọc', reason: 'Xét nghiệm định kỳ', status: 'completed', room: 'P203' },
-  { time: '15:00', patient: 'Nguyễn Anh Quân', reason: 'Theo dõi huyết áp', status: 'pending', room: 'P204' },
-];
-
-const waitingQueue = [
-  { name: 'Nguyễn Thị Thu', ticket: '#A102', wait: '08 phút', priority: 'Cao', note: 'Đau ngực, khó thở nhẹ' },
-  { name: 'Trần Văn Tùng', ticket: '#A103', wait: '15 phút', priority: 'Trung bình', note: 'Khó thở, tiền sử tim mạch' },
-  { name: 'Lê Thị Ngọc', ticket: '#A104', wait: '02 phút', priority: 'Thấp', note: 'Theo dõi sau xét nghiệm' },
-];
-
-const tasks = [
-  { title: 'Ký duyệt 3 hồ sơ bệnh án', icon: FileText, badge: 'Hôm nay', color: 'from-cyan-500 to-blue-500' },
-  { title: 'Gọi điện tư vấn tái khám', icon: Phone, badge: '2 bệnh nhân', color: 'from-emerald-500 to-teal-500' },
-  { title: 'Cập nhật phác đồ điều trị', icon: Stethoscope, badge: 'Tim mạch', color: 'from-violet-500 to-indigo-500' },
-];
-
-const trendData = [
-  { day: 'T2', completed: 10, pending: 3 },
-  { day: 'T3', completed: 12, pending: 2 },
-  { day: 'T4', completed: 11, pending: 4 },
-  { day: 'T5', completed: 13, pending: 3 },
-  { day: 'T6', completed: 14, pending: 2 },
-  { day: 'T7', completed: 8, pending: 5 },
-];
-
 export default function DoctorDashboard() {
   const { user } = useAuthStore();
+  
+  // Fetch dashboard data from API with optimized caching
+  const { data: dashboardData, isLoading } = useQuery({
+    queryKey: ['doctor-dashboard'],
+    queryFn: async () => {
+      const res = await doctorApi.getDashboard();
+      return res.data?.data || {};
+    },
+    staleTime: 2 * 60 * 1000, // Data is fresh for 2 minutes
+    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
+    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnMount: true, // Refetch when component mounts
+  });
+
+  const metrics = dashboardData?.metrics || {};
+  const appointments = dashboardData?.appointments || [];
+  const waitingQueue = dashboardData?.waitingQueue || [];
+  const weekStats = dashboardData?.weekStats || [];
+
+  // Calculate metrics for display
+  const metricsData = [
+    {
+      title: 'Lịch hẹn hôm nay',
+      value: metrics.todayAppointments || 0,
+      change: metrics.appointmentsChange > 0 
+        ? `+${metrics.appointmentsChange} ca` 
+        : metrics.appointmentsChange < 0 
+        ? `${metrics.appointmentsChange} ca` 
+        : 'Không đổi',
+      icon: Calendar,
+      gradient: 'from-cyan-500 to-blue-600'
+    },
+    {
+      title: 'Bệnh nhân chờ',
+      value: metrics.waitingPatients || 0,
+      change: metrics.waitingChange > 0 
+        ? `+${metrics.waitingChange} so với hôm qua` 
+        : metrics.waitingChange < 0 
+        ? `${metrics.waitingChange} so với hôm qua` 
+        : 'Không đổi',
+      icon: Users,
+      gradient: 'from-violet-500 to-fuchsia-600'
+    },
+    {
+      title: 'Hoàn thành',
+      value: `${metrics.completionRate || 0}%`,
+      change: 'Tỷ lệ xử lý',
+      icon: CheckCircle2,
+      gradient: 'from-emerald-500 to-teal-600'
+    },
+    {
+      title: 'Cảnh báo',
+      value: metrics.urgentCount || 0,
+      change: 'Trạng thái khẩn',
+      icon: AlertCircle,
+      gradient: 'from-amber-500 to-orange-600'
+    }
+  ];
+
+  if (isLoading) {
+    return (
+      <DoctorLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="h-8 w-8 animate-spin text-cyan-600" />
+        </div>
+      </DoctorLayout>
+    );
+  }
 
   return (
     <DoctorLayout>
@@ -110,7 +116,7 @@ export default function DoctorDashboard() {
                   <Activity className="h-4 w-4" /> Trực tuyến
                 </span>
                 <span className="inline-flex items-center gap-2 rounded-full border border-cyan-200 bg-cyan-50 px-4 py-2 text-sm font-medium text-cyan-700">
-                  <Clock3 className="h-4 w-4" /> Ca sáng • Phòng 203
+                  <Clock3 className="h-4 w-4" /> {new Date().toLocaleDateString('vi-VN', { weekday: 'long' })} • {new Date().toLocaleDateString('vi-VN')}
                 </span>
               </div>
             </div>
@@ -119,17 +125,21 @@ export default function DoctorDashboard() {
                 <p className="text-xs uppercase tracking-wide text-slate-500">Lịch hôm nay</p>
                 <div className="mt-2 flex items-center gap-2 text-xl font-semibold text-slate-900">
                   <Calendar className="h-5 w-5 text-cyan-500" />
-                  12 ca
+                  {metrics.todayAppointments || 0} ca
                 </div>
-                <p className="text-xs text-emerald-600">+3 so với hôm qua</p>
+                <p className={`text-xs ${metrics.appointmentsChange > 0 ? 'text-emerald-600' : metrics.appointmentsChange < 0 ? 'text-rose-600' : 'text-slate-600'}`}>
+                  {metrics.appointmentsChange > 0 ? `+${metrics.appointmentsChange}` : metrics.appointmentsChange < 0 ? metrics.appointmentsChange : 'Không đổi'} so với hôm qua
+                </p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Bệnh nhân chờ</p>
                 <div className="mt-2 flex items-center gap-2 text-xl font-semibold text-slate-900">
                   <Users className="h-5 w-5 text-fuchsia-500" />
-                  5 người
+                  {metrics.waitingPatients || 0} người
                 </div>
-                <p className="text-xs text-amber-600">2 ưu tiên cao</p>
+                <p className="text-xs text-amber-600">
+                  {waitingQueue.filter((p: any) => p.priority === 'Cao').length} ưu tiên cao
+                </p>
               </div>
             </div>
           </div>
@@ -137,7 +147,7 @@ export default function DoctorDashboard() {
 
         {/* Metrics */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {mockMetrics.map((metric) => (
+          {metricsData.map((metric) => (
             <div
               key={metric.title}
               className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md"
@@ -180,7 +190,13 @@ export default function DoctorDashboard() {
             </div>
 
             <div className="divide-y divide-slate-100">
-              {todayAppointments.map((item) => (
+              {appointments.length === 0 ? (
+                <div className="py-8 text-center text-slate-500">
+                  <Calendar className="h-12 w-12 mx-auto mb-3 text-slate-300" />
+                  <p>Không có lịch hẹn nào hôm nay</p>
+                </div>
+              ) : (
+                appointments.map((item: any) => (
                 <div key={item.time} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-4">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center">
@@ -204,7 +220,8 @@ export default function DoctorDashboard() {
                     </button>
                   </div>
                 </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
 
@@ -223,7 +240,13 @@ export default function DoctorDashboard() {
               </div>
 
               <div className="space-y-3">
-                {waitingQueue.map((patient) => (
+                {waitingQueue.length === 0 ? (
+                  <div className="py-6 text-center text-slate-500">
+                    <Users className="h-10 w-10 mx-auto mb-2 text-slate-300" />
+                    <p className="text-sm">Không có bệnh nhân chờ</p>
+                  </div>
+                ) : (
+                  waitingQueue.map((patient: any) => (
                   <div
                     key={patient.ticket}
                     className="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-cyan-200 hover:bg-white"
@@ -244,77 +267,11 @@ export default function DoctorDashboard() {
                       </span>
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
-            {/* Nhiệm vụ nhanh */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="mb-4 flex items-center gap-2">
-                <BarChart3 className="h-5 w-5 text-cyan-600" />
-                <h3 className="text-lg font-semibold text-slate-900">Nhiệm vụ nhanh</h3>
-              </div>
-              <div className="space-y-3">
-                {tasks.map((task) => (
-                  <div
-                    key={task.title}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`rounded-lg bg-gradient-to-br ${task.color} p-2.5 text-white`}>
-                        <task.icon className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-900">{task.title}</p>
-                        <p className="text-xs text-slate-600">{task.badge}</p>
-                      </div>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-slate-400" />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Thông tin nhanh */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-                <ShieldCheck className="h-5 w-5 text-emerald-600" />
-                <div>
-                  <h4 className="text-lg font-semibold text-slate-900">Tiện ích phòng khám</h4>
-                  <p className="text-xs text-slate-600">Tình trạng thiết bị & thuốc</p>
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-600">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="flex items-center gap-2">
-                    <Heart className="h-4 w-4 text-rose-500" />
-                    <p className="font-semibold text-slate-900">Monitor</p>
-                  </div>
-                  <p className="mt-2 text-xs text-emerald-700">Sẵn sàng</p>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-cyan-500" />
-                    <p className="font-semibold text-slate-900">Thuốc tim mạch</p>
-                  </div>
-                  <p className="mt-2 text-xs text-amber-700">Đủ 5 ngày</p>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="flex items-center gap-2">
-                    <Stethoscope className="h-4 w-4 text-emerald-500" />
-                    <p className="font-semibold text-slate-900">Dụng cụ</p>
-                  </div>
-                  <p className="mt-2 text-xs text-slate-600">Đã khử khuẩn</p>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-cyan-500" />
-                    <p className="font-semibold text-slate-900">Sinh tồn</p>
-                  </div>
-                  <p className="mt-2 text-xs text-emerald-700">Ổn định</p>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -328,14 +285,16 @@ export default function DoctorDashboard() {
                 <p className="text-sm text-slate-600">Số ca hoàn thành và đang chờ</p>
               </div>
             </div>
-            <div className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-              +6.3% so với tuần trước
-            </div>
+            {weekStats.length > 0 && (
+              <div className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                {weekStats.reduce((sum: number, day: { completed?: number }) => sum + (day.completed || 0), 0)} ca hoàn thành tuần này
+              </div>
+            )}
           </div>
 
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trendData} margin={{ top: 10, left: 0, right: 0 }}>
+              <AreaChart data={weekStats.length > 0 ? weekStats : [{ day: 'T2', completed: 0, pending: 0 }]} margin={{ top: 10, left: 0, right: 0 }}>
                 <defs>
                   <linearGradient id="colorCompleted" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.35} />

@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { PatientLayout } from '@/components/Layout/PatientLayout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { patientInvoicesApi, patientPaymentsApi, medicalRecordsApi } from '@/lib/api';
+import { patientInvoicesApi, patientPaymentsApi, medicalRecordsApi, patientProfileApi } from '@/lib/api';
+import { useAuthStore } from '@/store/authStore';
 import toast from 'react-hot-toast';
 import {
   CreditCard,
@@ -20,6 +21,7 @@ import {
   Smartphone,
   Building2,
   Receipt,
+  Printer,
 } from 'lucide-react';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
 
@@ -36,9 +38,21 @@ export default function PatientPayments() {
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [showPayModal, setShowPayModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('momo');
+  const [showPrintInvoice, setShowPrintInvoice] = useState(false);
   const searchParams = useSearchParams();
+  const { user } = useAuthStore();
 
   const queryClient = useQueryClient();
+
+  // Fetch patient profile for invoice
+  const { data: patientProfile } = useQuery({
+    queryKey: ['patient-profile-for-invoice'],
+    queryFn: async () => {
+      const response = await patientProfileApi.get();
+      return response.data?.data;
+    },
+    enabled: showPrintInvoice,
+  });
 
   // Lấy tất cả thanh toán (cả invoices và medical records)
   const { data: allPaymentsData, isLoading: isLoadingPayments, refetch: refetchAllPayments } = useQuery({
@@ -482,12 +496,24 @@ export default function PatientPayments() {
                     )}
 
                     {invoice.status === 'PAID' && invoice.paymentMethod && (
-                      <div className="px-4 py-2 bg-slate-50 rounded-xl border border-slate-200">
-                        <p className="text-xs text-slate-500 mb-1">Phương thức</p>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {getPaymentMethodLabel(invoice.paymentMethod)}
-                        </p>
-                      </div>
+                      <>
+                        <div className="px-4 py-2 bg-slate-50 rounded-xl border border-slate-200">
+                          <p className="text-xs text-slate-500 mb-1">Phương thức</p>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {getPaymentMethodLabel(invoice.paymentMethod)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedInvoice(invoice);
+                            setShowPrintInvoice(true);
+                          }}
+                          className="px-4 py-2 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-all flex items-center gap-2"
+                        >
+                          <Printer className="w-4 h-4" />
+                          In hóa đơn
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -623,32 +649,45 @@ export default function PatientPayments() {
                   </div>
                 </div>
 
-                {(selectedInvoice.status === 'UNPAID' || selectedInvoice.status === 'PENDING') && (
-                  <button
-                    onClick={() => {
-                      if (selectedInvoice.type === 'medical-record') {
-                        medicalRecordsApi.pay(selectedInvoice.ma_ho_so || selectedInvoice.id, 'momo')
-                          .then((response: any) => {
-                            if (response.data?.data?.paymentUrl) {
-                              window.location.href = response.data.data.paymentUrl;
-                            } else if (response.data?.data?.deeplink) {
-                              window.location.href = response.data.data.deeplink;
-                            } else {
-                              toast.error('Không thể tạo link thanh toán MoMo');
-                            }
-                          })
-                          .catch((error: any) => {
-                            toast.error(error.response?.data?.message || 'Có lỗi xảy ra khi thanh toán');
-                          });
-                      } else {
-                        setShowPayModal(true);
-                      }
-                    }}
-                    className="w-full px-6 py-4 bg-slate-900 text-white rounded-xl font-semibold hover:bg-slate-800 transition-all"
-                  >
-                    Thanh toán ngay
-                  </button>
-                )}
+                <div className="flex gap-3">
+                  {selectedInvoice.status === 'PAID' && (
+                    <button
+                      onClick={() => {
+                        setShowPrintInvoice(true);
+                      }}
+                      className="flex-1 px-6 py-4 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Printer className="w-5 h-5" />
+                      In hóa đơn
+                    </button>
+                  )}
+                  {(selectedInvoice.status === 'UNPAID' || selectedInvoice.status === 'PENDING') && (
+                    <button
+                      onClick={() => {
+                        if (selectedInvoice.type === 'medical-record') {
+                          medicalRecordsApi.pay(selectedInvoice.ma_ho_so || selectedInvoice.id, 'momo')
+                            .then((response: any) => {
+                              if (response.data?.data?.paymentUrl) {
+                                window.location.href = response.data.data.paymentUrl;
+                              } else if (response.data?.data?.deeplink) {
+                                window.location.href = response.data.data.deeplink;
+                              } else {
+                                toast.error('Không thể tạo link thanh toán MoMo');
+                              }
+                            })
+                            .catch((error: any) => {
+                              toast.error(error.response?.data?.message || 'Có lỗi xảy ra khi thanh toán');
+                            });
+                        } else {
+                          setShowPayModal(true);
+                        }
+                      }}
+                      className="w-full px-6 py-4 bg-slate-900 text-white rounded-xl font-semibold hover:bg-slate-800 transition-all"
+                    >
+                      Thanh toán ngay
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -731,7 +770,252 @@ export default function PatientPayments() {
             </div>
           </div>
         )}
+
+        {/* Print Invoice Modal */}
+        {showPrintInvoice && selectedInvoice && (
+          <InvoicePrintView
+            invoice={selectedInvoice}
+            patient={patientProfile || user}
+            onClose={() => {
+              setShowPrintInvoice(false);
+              setSelectedInvoice(null);
+            }}
+          />
+        )}
       </div>
     </PatientLayout>
+  );
+}
+
+// Invoice Print Component
+function InvoicePrintView({ invoice, patient, onClose }: { invoice: any; patient: any; onClose: () => void }) {
+  const { user } = useAuthStore();
+  
+  const getPaymentMethodLabel = (method?: string) => {
+    if (!method) return 'N/A';
+    const methodObj = paymentMethods.find((m) => m.value === method);
+    return methodObj?.label || method;
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  return (
+    <>
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          .print-invoice, .print-invoice * {
+            visibility: visible;
+          }
+          .print-invoice {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            padding: 0;
+            margin: 0;
+          }
+          .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
+      
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm no-print">
+        <div className="w-full max-w-4xl bg-white rounded-2xl border border-slate-200 p-6 max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center justify-between mb-6 no-print">
+            <h2 className="text-2xl font-bold text-slate-900">Xem trước hóa đơn</h2>
+            <div className="flex gap-3">
+              <button
+                onClick={handlePrint}
+                className="px-6 py-3 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-all flex items-center gap-2"
+              >
+                <Printer className="w-5 h-5" />
+                In hóa đơn
+              </button>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-600" />
+              </button>
+            </div>
+          </div>
+
+          <div className="print-invoice bg-white p-8">
+            {/* Header */}
+            <div className="text-center mb-8 pb-6 border-b-2 border-slate-300">
+              <div className="flex items-center justify-center gap-3 mb-4">
+                <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center">
+                  <Receipt className="w-10 h-10 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-3xl font-bold text-slate-900">HoanHao Hospital</h1>
+                  <p className="text-sm text-slate-600">Hệ thống quản lý y tế</p>
+                </div>
+              </div>
+              <h2 className="text-2xl font-bold text-slate-900 mt-4">
+                {invoice.type === 'medical-record' ? 'HÓA ĐƠN THANH TOÁN HỒ SƠ KHÁM' : 'HÓA ĐƠN THANH TOÁN'}
+              </h2>
+            </div>
+
+            {/* Invoice Info */}
+            <div className="grid grid-cols-2 gap-8 mb-8">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 mb-4 pb-2 border-b border-slate-200">
+                  Thông tin bệnh nhân
+                </h3>
+                <div className="space-y-2 text-slate-700">
+                  <p><span className="font-semibold">Họ và tên:</span> {patient?.fullName || user?.fullName || 'N/A'}</p>
+                  <p><span className="font-semibold">Email:</span> {patient?.email || user?.email || 'N/A'}</p>
+                  <p><span className="font-semibold">Số điện thoại:</span> {patient?.phone || user?.phone || 'N/A'}</p>
+                  {patient?.address && (
+                    <p><span className="font-semibold">Địa chỉ:</span> {patient.address}</p>
+                  )}
+                </div>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 mb-4 pb-2 border-b border-slate-200">
+                  Thông tin hóa đơn
+                </h3>
+                <div className="space-y-2 text-slate-700">
+                  <p>
+                    <span className="font-semibold">
+                      {invoice.type === 'medical-record' ? 'Mã hồ sơ khám:' : 'Mã hóa đơn:'}
+                    </span>{' '}
+                    #{invoice.type === 'medical-record' 
+                      ? (invoice.ma_ho_so || invoice.id) 
+                      : (invoice.id || invoice._id)}
+                  </p>
+                  {invoice.type === 'medical-record' && invoice.ma_thanh_toan && (
+                    <p><span className="font-semibold">Mã thanh toán:</span> #{invoice.ma_thanh_toan}</p>
+                  )}
+                  <p><span className="font-semibold">Ngày tạo:</span> {formatDate(invoice.createdAt || invoice.visitDate)}</p>
+                  {invoice.paidAt && (
+                    <p><span className="font-semibold">Ngày thanh toán:</span> {formatDateTime(invoice.paidAt)}</p>
+                  )}
+                  {invoice.paymentMethod && (
+                    <p>
+                      <span className="font-semibold">Phương thức:</span>{' '}
+                      {getPaymentMethodLabel(invoice.paymentMethod)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Appointment Info */}
+            {(invoice.appointment || invoice.visitDate || invoice.reason) && (
+              <div className="mb-8 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <h3 className="text-lg font-bold text-slate-900 mb-3">
+                  {invoice.type === 'medical-record' ? 'Thông tin hồ sơ khám' : 'Thông tin lịch khám'}
+                </h3>
+                <div className="grid grid-cols-2 gap-4 text-slate-700">
+                  {(invoice.appointment?.date || invoice.visitDate) && (
+                    <p>
+                      <span className="font-semibold">Ngày khám:</span>{' '}
+                      {formatDate(invoice.appointment?.date || invoice.visitDate)}
+                    </p>
+                  )}
+                  {invoice.appointment?.timeSlot && (
+                    <p>
+                      <span className="font-semibold">Giờ khám:</span> {invoice.appointment.timeSlot}
+                    </p>
+                  )}
+                  <p className="col-span-2">
+                    <span className="font-semibold">Lý do khám:</span>{' '}
+                    {invoice.appointment?.reason || invoice.reason || 'Khám bệnh'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Invoice Items */}
+            <div className="mb-8">
+              <h3 className="text-lg font-bold text-slate-900 mb-4 pb-2 border-b border-slate-200">
+                Chi tiết hóa đơn
+              </h3>
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-slate-100">
+                    <th className="border border-slate-300 px-4 py-3 text-left font-semibold text-slate-900">
+                      STT
+                    </th>
+                    <th className="border border-slate-300 px-4 py-3 text-left font-semibold text-slate-900">
+                      Mô tả dịch vụ
+                    </th>
+                    <th className="border border-slate-300 px-4 py-3 text-center font-semibold text-slate-900">
+                      Số lượng
+                    </th>
+                    <th className="border border-slate-300 px-4 py-3 text-right font-semibold text-slate-900">
+                      Đơn giá
+                    </th>
+                    <th className="border border-slate-300 px-4 py-3 text-right font-semibold text-slate-900">
+                      Thành tiền
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoice.items?.map((item: any, index: number) => (
+                    <tr key={index}>
+                      <td className="border border-slate-300 px-4 py-3 text-slate-700">{index + 1}</td>
+                      <td className="border border-slate-300 px-4 py-3 text-slate-700">{item.description}</td>
+                      <td className="border border-slate-300 px-4 py-3 text-center text-slate-700">
+                        {item.quantity}
+                      </td>
+                      <td className="border border-slate-300 px-4 py-3 text-right text-slate-700">
+                        {formatCurrency(item.unitPrice)}
+                      </td>
+                      <td className="border border-slate-300 px-4 py-3 text-right font-semibold text-slate-900">
+                        {formatCurrency(item.total)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-50">
+                    <td colSpan={4} className="border border-slate-300 px-4 py-4 text-right font-bold text-slate-900">
+                      TỔNG CỘNG:
+                    </td>
+                    <td className="border border-slate-300 px-4 py-4 text-right font-bold text-xl text-slate-900">
+                      {formatCurrency(invoice.amount)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Footer */}
+            <div className="mt-12 pt-6 border-t-2 border-slate-300">
+              <div className="grid grid-cols-2 gap-8">
+                <div className="text-center">
+                  <p className="font-semibold text-slate-900 mb-2">Người lập hóa đơn</p>
+                  <div className="mt-16">
+                    <p className="text-slate-700">(Ký và ghi rõ họ tên)</p>
+                  </div>
+                </div>
+                <div className="text-center">
+                  <p className="font-semibold text-slate-900 mb-2">Bệnh nhân</p>
+                  <div className="mt-16">
+                    <p className="text-slate-700">{patient?.fullName || user?.fullName || ''}</p>
+                    <p className="text-slate-700 text-sm mt-2">(Ký và ghi rõ họ tên)</p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-8 text-center text-sm text-slate-600">
+                <p>Cảm ơn quý khách đã sử dụng dịch vụ của HoanHao Hospital!</p>
+                <p className="mt-2">
+                  Hóa đơn này có giá trị pháp lý và được lưu trữ trong hệ thống.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

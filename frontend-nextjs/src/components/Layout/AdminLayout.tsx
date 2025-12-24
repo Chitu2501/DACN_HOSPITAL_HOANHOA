@@ -16,7 +16,9 @@ import {
   X,
   Building2,
   Bell,
-  User
+  User,
+  Pill,
+  Sparkles
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -26,10 +28,12 @@ const navigation = [
   { name: 'Quản lý Bác sĩ', href: '/admin/doctors', icon: Users },
   { name: 'Quản lý Bệnh nhân', href: '/admin/patients', icon: Users },
   { name: 'Khoa/Phòng khám', href: '/admin/departments', icon: Building2 },
-  { name: 'Lịch hẹn', href: '/admin/appointments', icon: Calendar },
+  { name: 'Quản lý thuốc', href: '/admin/medicines', icon: Pill },
+  { name: 'Đơn thuốc', href: '/admin/prescriptions', icon: FileText },
   { name: 'Hồ sơ bệnh án', href: '/admin/medical-records', icon: FileText },
   { name: 'Thống kê', href: '/admin/statistics', icon: BarChart3 },
   { name: 'Báo cáo', href: '/admin/reports', icon: FileText },
+  { name: 'AI Assistant', href: '/admin/ai-assistant', icon: Sparkles },
 ];
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {

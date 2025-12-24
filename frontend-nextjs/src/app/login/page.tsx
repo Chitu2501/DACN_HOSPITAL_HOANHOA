@@ -131,7 +131,7 @@ export default function LoginPage() {
               <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
                 <Heart className="w-8 h-8 text-white" />
               </div>
-              <span className="text-2xl font-bold tracking-tight">MediCare+</span>
+              <span className="text-2xl font-bold tracking-tight">Hoàn Hảo Hospital</span>
             </div>
             <h1 className="text-5xl font-bold leading-tight mb-6">
               Chăm sóc sức khỏe<br />

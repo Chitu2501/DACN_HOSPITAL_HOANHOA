@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AdminLayout } from '@/components/Layout/AdminLayout';
+import { adminApi } from '@/lib/api';
+import { useDebounce } from '@/lib/hooks/useDebounce';
 import { toast } from 'react-hot-toast';
 import {
   Users,
@@ -13,69 +15,46 @@ import {
   Phone,
   Mail,
   X,
-  Stethoscope
+  Stethoscope,
+  Loader2
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-
-// Mock data cho bác sĩ
-const mockDoctors = [
-  {
-    _id: '2',
-    code: 'BS001',
-    fullName: 'Bác sĩ Nguyễn Văn A',
-    email: 'bsnguyen@hospital.com',
-    phone: '0912345678',
-    specialization: 'Tim mạch',
-    department: 'Khoa Tim mạch',
-    licenseNumber: 'BS-001',
-    workSchedule: 'Thứ 2, 4, 6 (8h-17h)',
-    isActive: true,
-  },
-  {
-    _id: '3',
-    code: 'BS002',
-    fullName: 'Bác sĩ Trần Thị B',
-    email: 'bstran@hospital.com',
-    phone: '0912345679',
-    specialization: 'Nội khoa',
-    department: 'Khoa Nội',
-    licenseNumber: 'BS-002',
-    workSchedule: 'Thứ 3, 5, 7 (8h-17h)',
-    isActive: true,
-  },
-  {
-    _id: '4',
-    code: 'BS003',
-    fullName: 'Bác sĩ Lê Văn C',
-    email: 'bsle@hospital.com',
-    phone: '0912345680',
-    specialization: 'Ngoại khoa',
-    department: 'Khoa Ngoại',
-    licenseNumber: 'BS-003',
-    workSchedule: 'Thứ 2-6 (8h-12h)',
-    isActive: true,
-  },
-];
 
 export default function DoctorsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const queryClient = useQueryClient();
 
-  // Mock query
-  const { data: doctors, isLoading } = useQuery({
-    queryKey: ['doctors'],
+  // Debounce search term để tránh quá nhiều API calls
+  const debouncedSearchTerm = useDebounce(searchTerm, 500);
+
+  // Fetch doctors từ API thật
+  const { data: doctorsResponse, isLoading, error } = useQuery({
+    queryKey: ['admin-doctors', debouncedSearchTerm],
     queryFn: async () => {
-      return new Promise((resolve) => {
-        setTimeout(() => resolve(mockDoctors), 500);
-      });
+      try {
+        const res = await adminApi.getDoctors({
+          search: debouncedSearchTerm || undefined,
+        });
+        if (!res.data?.success) {
+          throw new Error(res.data?.message || 'Không thể tải danh sách bác sĩ');
+        }
+        return res.data;
+      } catch (err: any) {
+        console.error('Error fetching doctors:', err);
+        throw err;
+      }
     },
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 5 * 60 * 1000, // 5 minutes
+    retry: 2,
   });
 
-  const filteredDoctors = (doctors as any[])?.filter((doctor) =>
-    doctor.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    doctor.specialization.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const doctors = doctorsResponse?.data || [];
+
+  // Filter đã được xử lý ở backend, nhưng có thể filter thêm ở frontend nếu cần
+  const filteredDoctors = doctors;
 
   return (
     <AdminLayout>
@@ -116,48 +95,108 @@ export default function DoctorsPage() {
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-center">
-              <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="mt-4 text-gray-600">Đang tải...</p>
+              <Loader2 className="w-12 h-12 text-primary-600 animate-spin mx-auto" />
+              <p className="mt-4 text-gray-600">Đang tải danh sách bác sĩ...</p>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <p className="text-red-600">Có lỗi xảy ra khi tải danh sách bác sĩ</p>
+              <button
+                onClick={() => queryClient.invalidateQueries({ queryKey: ['admin-doctors'] })}
+                className="mt-4 btn btn-secondary"
+              >
+                Thử lại
+              </button>
+            </div>
+          </div>
+        ) : filteredDoctors.length === 0 ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600">Không tìm thấy bác sĩ nào</p>
+              {searchTerm && (
+                <p className="text-sm text-gray-500 mt-2">
+                  Thử tìm kiếm với từ khóa khác
+                </p>
+              )}
             </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredDoctors?.map((doctor) => (
-              <div key={doctor._id} className="card hover:shadow-lg transition-shadow">
+            {filteredDoctors?.map((doctor: any) => (
+              <div key={doctor._id || doctor.id || doctor.ma_bac_si} className="card hover:shadow-lg transition-shadow">
                 <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    {doctor.avatar_url ? (
+                      <img 
+                        src={doctor.avatar_url.startsWith('http') 
+                          ? doctor.avatar_url 
+                          : `${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000'}${doctor.avatar_url.startsWith('/') ? '' : '/'}${doctor.avatar_url}`
+                        }
+                        alt={doctor.fullName}
+                        className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          const fallback = target.nextElementSibling as HTMLElement;
+                          if (fallback) fallback.classList.remove('hidden');
+                        }}
+                      />
+                    ) : null}
+                    <div className={`w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 ${doctor.avatar_url ? 'hidden' : ''}`}>
                       <Stethoscope className="w-6 h-6 text-blue-600" />
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{doctor.fullName}</h3>
-                      <span className="text-xs text-gray-500">{doctor.code}</span>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-gray-900 truncate">{doctor.fullName}</h3>
+                      <span className="text-xs text-gray-500">{doctor.code || doctor.ma_bac_si}</span>
                     </div>
                   </div>
-                  <span className={`badge ${doctor.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                    {doctor.isActive ? 'Hoạt động' : 'Nghỉ'}
+                  <span className={`badge flex-shrink-0 ${doctor.isActive !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                    {doctor.isActive !== false ? 'Hoạt động' : 'Nghỉ'}
                   </span>
                 </div>
 
                 <div className="space-y-2 mb-4">
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <Stethoscope className="w-4 h-4" />
-                    <span className="font-medium">{doctor.specialization}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <Mail className="w-4 h-4" />
-                    <span>{doctor.email}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <Phone className="w-4 h-4" />
-                    <span>{doctor.phone}</span>
-                  </div>
+                  {doctor.specialization && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Stethoscope className="w-4 h-4" />
+                      <span className="font-medium">{doctor.specialization}</span>
+                    </div>
+                  )}
+                  {doctor.department && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Users className="w-4 h-4" />
+                      <span>{doctor.department}</span>
+                    </div>
+                  )}
+                  {doctor.email && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Mail className="w-4 h-4" />
+                      <span className="truncate">{doctor.email}</span>
+                    </div>
+                  )}
+                  {doctor.phone && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Phone className="w-4 h-4" />
+                      <span>{doctor.phone}</span>
+                    </div>
+                  )}
+                  {doctor.licenseNumber && (
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <span className="font-medium">Chứng chỉ:</span>
+                      <span>{doctor.licenseNumber}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-4 border-t">
-                  <p className="text-xs text-gray-500 mb-3">
-                    <strong>Lịch làm việc:</strong> {doctor.workSchedule}
-                  </p>
+                  {doctor.workSchedule && (
+                    <p className="text-xs text-gray-500 mb-3">
+                      <strong>Lịch làm việc:</strong> {doctor.workSchedule}
+                    </p>
+                  )}
                   <div className="flex gap-2">
                     <button
                       onClick={() => {
@@ -172,7 +211,8 @@ export default function DoctorsPage() {
                     <button
                       onClick={() => {
                         if (confirm('Bạn có chắc muốn xóa bác sĩ này?')) {
-                          toast.success('Xóa bác sĩ thành công (Mock)');
+                          toast.error('Chức năng xóa bác sĩ đang được phát triển');
+                          // TODO: Implement delete doctor API
                         }
                       }}
                       className="btn btn-danger flex items-center justify-center gap-1"
