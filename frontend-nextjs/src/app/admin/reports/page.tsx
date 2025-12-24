@@ -340,7 +340,7 @@ export default function ReportsPage() {
                         {previewPage} / {getTotalPages(previewData.users.data)}
                       </span>
                       <button
-                        onClick={() => setPreviewPage(p => Math.min(getTotalPages(previewData.users.data), p + 1))}
+                        onClick={() => setPreviewPage(p => Math.min(getTotalPages(previewData.users?.data), p + 1))}
                         disabled={previewPage === getTotalPages(previewData.users.data)}
                         className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
                       >
@@ -399,7 +399,7 @@ export default function ReportsPage() {
                         {previewPage} / {getTotalPages(previewData.revenue.data)}
                       </span>
                       <button
-                        onClick={() => setPreviewPage(p => Math.min(getTotalPages(previewData.revenue.data), p + 1))}
+                        onClick={() => setPreviewPage(p => Math.min(getTotalPages(previewData.revenue?.data), p + 1))}
                         disabled={previewPage === getTotalPages(previewData.revenue.data)}
                         className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
                       >
